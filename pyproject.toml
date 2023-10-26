@@ -10,18 +10,21 @@ authors = [
 ]
 description = "Tools for working with LSL data streams."
 readme = "README.md"
-requires-python = ">=3.9"
-license = {text = "AGPL"}
+requires-python = ">=3.11"
+license = {text = "AGPL-3.0-or-later"}
 
 dependencies = [
-    "pyxdftools @ git+https://github.com/jamieforth/pyxdf-tools.git",
     "pylsl",
 ]
 
+[project.optional-dependencies]
+xdf = ["pyxdftools @ git+https://github.com/jamieforth/pyxdf-tools.git"]
 [project.urls]
 "Homepage" = "https://github.com/jamieforth/pylsl-tools"
 "Bug Tracker" = "https://github.com/jamieforth/pylsl-tools/issues"
 
 [project.scripts]
 lsl-playback = "pylsltools.playback:main"
+lsl-relay = "pylsltools.relay:main"
 lsl-simulate = "pylsltools.simulate:main"
+lsl-control = "pylsltools.control:main"
