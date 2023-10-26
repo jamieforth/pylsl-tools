@@ -6,6 +6,9 @@ name = "pypi"
 [packages]
 pylsltools = {editable = true, path = "."}
 
+[xdf]
+pylsltools = {editable = true, path = ".", extras = ["xdf"]}
+
 [dev-packages]
 python-lsp-server = {extras = ["all"], version = "*"}
 pytest = "*"
