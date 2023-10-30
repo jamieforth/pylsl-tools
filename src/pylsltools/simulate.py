@@ -1,74 +1,84 @@
 """Test programme to simulate LSL streams."""
 
 import argparse
-import concurrent.futures
 
 from pylsl import local_clock
 
+# from pylsltools.streams.control_stream import ControlClient
 from pylsltools.streams.test_stream import TestStream
-from pylsltools.streams.control_stream import ControlClient
 
 
 class Simulate:
     """Generate test synthetic data streams."""
 
     controller = None
-    latency = 0.2
 
-    def __init__(self, num_streams, channel_count, sample_rate, generators,
-                 name, content_type, channel_format, channel_type,
-                 control_name):
-        """Return a list of TestStream objects.
+    def __init__(self, num_streams, generators, name, content_type,
+                 channel_count, nominal_srate, channel_format, source_id,
+                 channel_labels=None, channel_types=None, channel_units=None,
+                 control_name=None):
+        """Initialise simulation test.
 
         Optionally set up an input control stream.
         """
         self.num_streams = num_streams
-
-        streams = [TestStream(stream_idx, channel_count, sample_rate,
-                              generators, name, content_type=content_type,
-                              channel_format=channel_format,
-                              channel_types=channel_type) for stream_idx in
-                   range(num_streams)]
-        print('Streams created')
-        self.streams = streams
-
+        self.generators = generators
+        self.name = name
+        self.content_type = content_type
+        self.channel_count = channel_count
+        self.nominal_srate = nominal_srate
+        self.channel_format = channel_format
+        self.source_id = source_id
+        self.channel_labels = channel_labels
+        self.channel_types = channel_types
+        self.channel_units = channel_units
         if control_name:
-            self.controller = ControlClient(control_name, self)
+            print('Controller not implemented.')
+            # self.controller = ControlClient(control_name, self)
 
-    def start(self, start_time=None, max_time=None, max_samples=None,
-              chunk_size=None, max_buffered=None, debug=None):
+    def start(self, start_time=None, latency=None, max_time=None,
+              max_samples=None, chunk_size=None, max_buffered=None,
+              debug=None):
         """Start test streams with a synchronised start time."""
         if start_time is None:
             # Get start time in the main thread to synchronise streams.
-            start_time = local_clock() + self.latency
+            start_time = local_clock()
+        streams = [TestStream(stream_idx, self.generators, self.name,
+                              self.content_type, self.channel_count,
+                              self.nominal_srate, self.channel_format,
+                              source_id=self.source_id,
+                              channel_labels=self.channel_labels,
+                              channel_types=self.channel_types,
+                              channel_units=self.channel_units,
+                              start_time=start_time,
+                              latency=latency,
+                              max_time=max_time,
+                              max_samples=max_samples,
+                              chunk_size=chunk_size,
+                              max_buffered=max_buffered,
+                              debug=debug)
+                   for stream_idx in range(self.num_streams)]
+        print('Streams created.')
+        self.streams = streams
 
-        with concurrent.futures.ThreadPoolExecutor(
-                len(self.streams)) as executor:
-            # Run each stream in a separate thread.
-            futures = [executor.submit(stream.run,
-                                       start_time=start_time,
-                                       max_time=max_time,
-                                       max_samples=max_samples,
-                                       chunk_size=chunk_size,
-                                       max_buffered=max_buffered,
-                                       debug=debug)
-                       for stream in self.streams]
-            print('Streams started')
-            # Wait until threads return. Stop all threads if one raises
-            # and exception.
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    result = future.result()
-                    print(f'result: {result}')
-                except Exception as exc:
-                    self.stop()
-                    raise exc
+        for stream in self.streams:
+            stream.start()
+        print('Streams started.')
+
+        for stream in self.streams:
+            # Block until all child processes return.
+            stream.join()
 
     def stop(self):
-        """Stop all stream threads."""
-        print('Stopping all streams 2.')
+        """Stop all stream processes."""
         for stream in self.streams:
-            stream.is_running = False
+            if not stream.stop.is_set():
+                print(f'Stopping: {stream.name}.')
+                stream.stop.set()
+        # for stream in self.streams:
+        #     # Block until all child processes return.
+        #     stream.join()
+
 
 def main():
     """Generate synthetic LSL streams."""
@@ -103,7 +113,7 @@ def main():
         number of channels.""")
     parser.add_argument(
         '--name',
-        help='Unique identifier.')
+        help='Additional identifier to append to stream name.')
     parser.add_argument(
         '--content-type',
         default='data',
@@ -115,10 +125,16 @@ def main():
                  'int8'],
         help='Channel datatype.')
     parser.add_argument(
+        '--source-id',
+        help='Unique identifier for stream source.')
+    parser.add_argument(
         '-t',
         '--channel-type',
         default='misc',
         help='Synthetic data channel type.')
+    parser.add_argument(
+        '--channel-unit',
+        help='Synthetic data channel unit.')
     parser.add_argument(
         '--max-time',
         type=float,
@@ -146,34 +162,38 @@ def main():
         '--control-name',
         help='Control stream name.')
     parser.add_argument(
+        '--latency',
+        default=0.2,
+        help='Scheduling latency.')
+    parser.add_argument(
         '--debug',
-        action=argparse.BooleanOptionalAction,
+        action='store_true',
         help='Print extra debugging information.')
     args = parser.parse_args()
-    debug = args.debug
-    simulate = Simulate(args.num_streams, args.num_channels, args.sample_rate,
-                        args.generators, args.name,
-                        content_type=args.content_type,
-                        channel_format=args.channel_format,
-                        channel_type=args.channel_type,
+    simulate = Simulate(args.num_streams, args.generators, args.name,
+                        args.content_type, args.num_channels, args.sample_rate,
+                        args.channel_format, args.source_id,
+                        channel_types=args.channel_type,
+                        channel_units=args.channel_unit,
                         control_name=args.control_name)
     try:
         if simulate.controller:
             # Block here until controller quits or keyboard interrupt.
             simulate.controller.start()
         else:
-            # Start streams now and block until all stream threads
-            # return or keyboard interrupt.
-            print('before start')
-            simulate.start(max_time=args.max_time,
+            # Start streams and block until all stream processes return
+            # or keyboard interrupt.
+            simulate.start(latency=args.latency,
+                           max_time=args.max_time,
                            max_samples=args.max_samples,
                            chunk_size=args.chunk_size,
-                           max_buffered=args.max_buffered, debug=debug)
-            print('after start')
+                           max_buffered=args.max_buffered,
+                           debug=args.debug)
     except Exception as exc:
+        # Stop all streams if one raises an error.
         simulate.stop()
         raise exc
     except KeyboardInterrupt:
-        print('Stopping all streams.')
+        print('Stopping main.')
         simulate.stop()
-        print('All streams closed.')
+    print('Main exit.')
