@@ -8,7 +8,7 @@ timestamps before relaying across the network.
 import textwrap
 
 from pylsl import (LostError, StreamInlet, StreamOutlet, local_clock)
-from pylsltools.streams import DataStream
+from pylsltools.streams import DataStream, MarkerStream
 
 
 class RelayStream(DataStream):
@@ -30,7 +30,11 @@ class RelayStream(DataStream):
 
         self.sender_info = sender_info
         self.keep_orig_timestamps = keep_orig_timestamps
-        self.monitor = monitor
+        if monitor:
+            self.monitor = MarkerStream('_monitor_' + self.sender_info.name(),
+                                        content_type='monitor')
+        else:
+            self.monitor = None
         self.chunk_size = chunk_size
         self.max_buffered = max_buffered
         self.debug = debug
@@ -53,7 +57,10 @@ class RelayStream(DataStream):
                             processing_flags=0)
         outlet = StreamOutlet(self.info, self.chunk_size,
                               self.max_buffered)
-        nominal_srate = self.info.nominal_srate()
+        if self.monitor:
+            monitor_outlet = StreamOutlet(self.monitor.info, chunk_size=1)
+
+        nominal_srate = self.sender_info.nominal_srate()
         sample_count = 0
         try:
             while not self.is_stopped():
@@ -79,8 +86,11 @@ class RelayStream(DataStream):
                         else:
                             if (sample_count % nominal_srate) == 0:
                                 self.print(self.name, now, timestamp, sample)
-                    # if (sample_count % nominal_srate) == 0:
-                    #     self.monitor.push_sample([f'{self.info.name()} samples: {i}'])
+                    if self.monitor:
+                        if (sample_count % nominal_srate) == 0:
+                            monitor_outlet.push_sample([
+                                f'{self.sender_info.name()} samples: {sample_count}'
+                            ])
                     sample_count = sample_count + 1
                 else:
                     print('no data')
@@ -99,22 +109,3 @@ class RelayStream(DataStream):
         timestamp: {timestamp:.6f},
         data: {data}
         '''), 200))
-
-    def run_monitor(self):
-        """Monitor thread main loop."""
-        i = 0
-        while not self.is_stopped():
-            try:
-                sample, timestamp = self.inlet.pull_sample()
-            except LostError as exc:
-                self.stop()
-                print(exc)
-                return
-            except Exception as exc:
-                self.stop()
-                raise exc
-            if timestamp:
-                print(sample)
-            else:
-                print('no data')
-        print(f'Monitor thread ended: {self.info.name()}')

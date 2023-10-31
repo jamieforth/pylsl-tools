@@ -59,7 +59,6 @@ class TestStream (DataStream):
         delta = 1 / self.info.nominal_srate()
         self.outlet = StreamOutlet(self.info, self.chunk_size,
                                    self.max_buffered)
-        print(self.start_time, local_clock())
         time.sleep(self.latency / 2)
         try:
             while not self.is_stopped():

@@ -164,7 +164,7 @@ def main():
     parser.add_argument(
         '--latency',
         type=float,
-        default=0.5,
+        default=1.0,
         help='Scheduling latency.')
     parser.add_argument(
         '--debug',

@@ -95,7 +95,7 @@ def main():
     parser.add_argument(
         '--monitor',
         action='store_true',
-        help='Enable monitoring/disable relay.')
+        help='Enable monitoring stream.')
     parser.add_argument(
         '--keep-orig-timestamps',
         action='store_true',
@@ -125,17 +125,11 @@ def main():
     pred = args.pred
 
     if len(pred) > 0:
-        if not args.monitor:
-            pred = ("not(starts-with(name, '_relay_')) and " +
-                    "not(starts-with(name, '_monitor_')) and ") + pred
-        else:
-            pred = "starts-with(name, '_monitor_') and " + pred
+        pred = ("not(starts-with(name, '_relay_')) and " +
+                "not(starts-with(name, '_monitor_')) and ") + pred
     else:
-        if not args.monitor:
-            pred = ("not(starts-with(name, '_relay_')) and " +
-                    "not(starts-with(name, '_monitor_'))")
-        else:
-            pred = "starts-with(name, '_monitor_')"
+        pred = ("not(starts-with(name, '_relay_')) and " +
+                "not(starts-with(name, '_monitor_'))")
     if not args.non_local:
         pred = f"hostname='{platform.node()}' and " + pred
     print(f'Stream matching predicate: {repr(pred)}')
