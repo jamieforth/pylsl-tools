@@ -2,6 +2,7 @@
 
 import os
 import time
+import textwrap
 
 from pylsl import StreamOutlet, local_clock
 from pylsltools.streams import DataStream
@@ -49,31 +50,41 @@ class TestStream (DataStream):
         self.chunk_size = chunk_size
         self.max_buffered = max_buffered
         self.debug = debug
-        self.outlet = StreamOutlet(self.info, self.chunk_size,
-                                   self.max_buffered)
 
     def run(self):
         if self.start_time is None:
             self.start_time = local_clock()
         sample_count = 0
-        logical_time = self.start_time
+        logical_time = self.start_time + (self.latency)
         delta = 1 / self.info.nominal_srate()
+        self.outlet = StreamOutlet(self.info, self.chunk_size,
+                                   self.max_buffered)
+        print(self.start_time, local_clock())
+        time.sleep(self.latency / 2)
         try:
             while not self.is_stopped():
                 now = local_clock()
                 elapsed_time = logical_time - self.start_time
                 sample = self.generate_sample(sample_count)
+                self.outlet.push_sample(sample, timestamp=logical_time)
                 if self.debug:
-                    print(f'{self.name}: {logical_time:.3f} {now} {sample} {elapsed_time:.3f}',
-                          flush=True)
-                self.outlet.push_sample(sample, timestamp=logical_time +
-                                        self.latency)
+                    if self.info.nominal_srate() <= 5:
+                        self.print(self.name, now, logical_time, elapsed_time,
+                                   sample)
+                    else:
+                        if (sample_count % self.info.nominal_srate()) == 0:
+                            self.print(self.name, now, logical_time,
+                                       elapsed_time, sample)
                 sample_count = sample_count + 1
                 self.check_continue(elapsed_time, sample_count, self.max_time,
                                     self.max_samples)
                 logical_time = logical_time + delta
                 # Avoid drift.
-                time.sleep(max(0, logical_time - local_clock()))
+                delay = logical_time - local_clock()
+                if delay > 0:
+                    time.sleep(delay)
+                else:
+                    print(f'LATE: {self.name} {delay}. Increase latency!')
         except Exception as exc:
             self.stop()
             raise exc
@@ -114,3 +125,12 @@ class TestStream (DataStream):
                 return 1
             else:
                 return 0
+
+    def print(self, name, now, timestamp, elapsed_time, data):
+        print(textwrap.fill(textwrap.dedent(f'''
+        {name}:
+        now: {now:.6f},
+        timestamp: {timestamp:.6f},
+        elapsed: {elapsed_time:.2f},
+        data: {data}
+        '''), 200))

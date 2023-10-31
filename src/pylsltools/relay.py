@@ -2,18 +2,18 @@
 
 import argparse
 import platform
-from threading import Thread
+from threading import Thread, Event
 from time import sleep
 
 from pylsl import ContinuousResolver
 
-from pylsltools.streams.relay_stream import RelayStream
+from pylsltools.streams import RelayStream
 
 
 class Relay:
     """Relay matching streams."""
 
-    is_running = False
+    stop_event = Event()
     active_streams = {}
 
     def __init__(self, pred, control_name):
@@ -22,7 +22,7 @@ class Relay:
 
     def start(self, chunk_size, max_buffered, keep_orig_timestamps, monitor,
               debug):
-        resolver = ContinuousResolver(pred=self.pred)
+        resolver = ContinuousResolver(pred=self.pred, forget_after=1)
 
         self.thread = Thread(target=self.run, args=[resolver, chunk_size,
                                                     max_buffered,
@@ -35,8 +35,7 @@ class Relay:
 
     def run(self, resolver, chunk_size, max_buffered, keep_orig_timestamps,
             monitor, debug):
-        self.is_running = True
-        while self.is_running:
+        while not self.is_stopped():
             # FIXME: Improve this? Continuous resolver always returns a
             # new StreamInfo object so we need to continually regenerate
             # the key to check if we've seen it before.
@@ -44,12 +43,11 @@ class Relay:
             for stream in streams:
                 stream_key = self.make_stream_key(stream)
                 if stream_key not in self.active_streams.keys():
-                    self.active_streams[stream_key] = RelayStream(
-                        stream).start(chunk_size=chunk_size,
-                                      max_buffered=max_buffered,
-                                      keep_orig_timestamps=keep_orig_timestamps,
-                                      monitor=monitor,
-                                      debug=debug)
+                    new_stream = RelayStream(
+                        stream, keep_orig_timestamps, monitor, chunk_size,
+                        max_buffered, debug)
+                    self.active_streams[stream_key] = new_stream
+                    new_stream.start()
                     print('New stream added.')
             self.cleanup()
             sleep(1)
@@ -57,17 +55,21 @@ class Relay:
     def stop(self):
         """Stop relay thread and all relay stream threads."""
         print('Stopping all relay streams.')
+        self.stop_event.set()
         for stream in self.active_streams.values():
             stream.stop()
-        self.is_running = False
+            stream.join()
+
+    def is_stopped(self):
+        return self.stop_event.is_set()
 
     def cleanup(self):
         for stream_key in list(self.active_streams):
             stream = self.active_streams[stream_key]
-            if not stream.is_running:
-                print(f'Removing: {stream_key}')
+            if stream.is_stopped():
+                print(f'Removing: {stream.name}')
                 del self.active_streams[stream_key]
-        # print(f'Total active streams: {len(self.active_streams)}')
+        #print(f'Total active streams: {len(self.active_streams)}')
 
     def make_stream_key(self, stream):
         key = ':'.join([
@@ -145,7 +147,7 @@ def main():
 
     relay = Relay(pred, args.control_name)
 
-    # Block here unless keyboard interrupt.
+    # Start continuous resolver and block unless keyboard interrupt.
     try:
         relay.start(chunk_size=args.chunk_size,
                     max_buffered=args.max_buffered,
@@ -156,5 +158,6 @@ def main():
         relay.stop()
         raise exc
     except KeyboardInterrupt:
+        print('Stopping main.')
         relay.stop()
-        print('Main thread ended.')
+    print('Main exit.')

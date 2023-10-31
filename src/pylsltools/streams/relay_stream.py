@@ -5,103 +5,105 @@ control. Useful for re-encoding a local stream to fix broken client
 timestamps before relaying across the network.
 """
 
-from threading import Thread
-from pylsl import StreamInlet, LostError, IRREGULAR_RATE
-from pylsltools.streams.lsl_sender import LSLSender
+import textwrap
 
-class RelayStream():
+from pylsl import (LostError, StreamInlet, StreamOutlet, local_clock)
+from pylsltools.streams import DataStream
 
-    is_running = False
 
-    def __init__(self, info):
+class RelayStream(DataStream):
 
-        self.info = info
-        print(f'stream: {info.as_xml()}')
+    def __init__(self, sender_info, keep_orig_timestamps=False, monitor=False,
+                 chunk_size=1, max_buffered=360, debug=False, **kwargs):
 
-    def start(self, chunk_size, max_buffered, keep_orig_timestamps=False,
-              monitor=False, debug=False):
-        """Start relay thread."""
+        print(f'sender info: {sender_info.as_xml()}')
+        self.name = '_relay_' + sender_info.name()
+        super().__init__(self.name,
+                         sender_info.type(),
+                         sender_info.channel_count(),
+                         sender_info.nominal_srate(),
+                         sender_info.channel_format(),
+                         source_id=sender_info.source_id(),
+                         # FIXME
+                         #desc=self.inlet.info().desc()
+                         )
+
+        self.sender_info = sender_info
+        self.keep_orig_timestamps = keep_orig_timestamps
+        self.monitor = monitor
+        self.chunk_size = chunk_size
+        self.max_buffered = max_buffered
+        self.debug = debug
+
+    def run(self):
+        """Relay process main loop."""
+        # FIXME: Integrate chunking option.
         # Chunk size should be 1 when re-encoding timestamps to ensure
         # we get samples as fast as possible.
 
-        # FIXME: Recover=True will keep this thread alive forever and
-        # never throw a LostError. Recover=False will end this thread
+        # FIXME: Recover=True will keep this process alive forever and
+        # never throw a LostError. Recover=False will end this process
         # and delegate restarting to the continuous resolver if the
-        # stream comes back online. Which is best?
-        self.inlet = StreamInlet(self.info, max_buflen=max_buffered,
-                                 max_chunklen=chunk_size, recover=True,
-                                 processing_flags=0)
-        if not monitor:
-            self.sender = LSLSender('_relay_' + self.info.name(),
-                                    self.info.type(),
-                                    self.info.channel_count(),
-                                    self.info.nominal_srate(),
-                                    self.info.channel_format(),
-                                    self.info.source_id(),
-                                    # FIXME
-                                    #desc=self.inlet.info().desc()
-                                    )
-            self.sender.create_outlet(chunk_size, max_buffered)
-            self.monitor = LSLSender('_monitor_' + self.info.name(),
-                                    'monitor',
-                                     1,
-                                     IRREGULAR_RATE,
-                                     'string',
-                                     self.info.source_id())
-            self.monitor.create_outlet(1, max_buffered)
+        # stream comes back online. Which is best? Handing control back
+        # to the continuous resolver allows for a graceful exit.
+        inlet = StreamInlet(self.sender_info,
+                            max_buflen=self.max_buffered,
+                            max_chunklen=self.chunk_size,
+                            recover=False,
+                            processing_flags=0)
+        outlet = StreamOutlet(self.info, self.chunk_size,
+                              self.max_buffered)
+        nominal_srate = self.info.nominal_srate()
+        sample_count = 0
+        try:
+            while not self.is_stopped():
+                try:
+                    sample, timestamp = inlet.pull_sample()
+                    now = local_clock()
+                    #chunk, timestamps = inlet.pull_chunk(timeout)
+                except LostError as exc:
+                    self.stop()
+                    print(f'{self.name}: {exc}')
+                    return
+                except Exception as exc:
+                    self.stop()
+                    raise exc
+                if timestamp:
+                    if not self.keep_orig_timestamps:
+                        timestamp = now
+                    # Re-encode timestamp.
+                    outlet.push_sample(sample, timestamp)
+                    if self.debug:
+                        if nominal_srate <= 5:
+                            self.print(self.name, now, timestamp, sample)
+                        else:
+                            if (sample_count % nominal_srate) == 0:
+                                self.print(self.name, now, timestamp, sample)
+                    # if (sample_count % nominal_srate) == 0:
+                    #     self.monitor.push_sample([f'{self.info.name()} samples: {i}'])
+                    sample_count = sample_count + 1
+                else:
+                    print('no data')
+        except Exception as exc:
+            self.stop()
+            raise exc
+        except KeyboardInterrupt:
+            print(f'Stopping: {self.name}')
+            self.stop()
+        print(f'Ended: {self.info.name()}')
 
+    def print(self, name, now, timestamp, data):
+        print(textwrap.fill(textwrap.dedent(f'''
+        {name}:
+        now: {now:.6f},
+        timestamp: {timestamp:.6f},
+        data: {data}
+        '''), 200))
 
-            # FIXME: Integrate chunking option.
-            timeout = max(0.005, chunk_size / self.info.nominal_srate())
-            self.thread = Thread(target=self.run, args=[timeout, debug])
-            self.thread.start()
-        else:
-            self.thread = Thread(target=self.run_monitor, args=[debug])
-            self.thread.start()
-        return self
-
-    def stop(self):
-        """Stop relay thread."""
-        print(f'Stopping relay stream: {self.info.name()}')
-        self.is_running = False
-
-    def run(self, timeout, debug):
-        """Relay thread main loop."""
-        self.is_running = True
-        i = 0
-        while self.is_running:
-            #chunk, timestamps = self.inlet.pull_chunk(timeout)
-            try:
-                sample, timestamp = self.inlet.pull_sample()
-            except LostError as exc:
-                self.stop()
-                print(exc)
-                return
-            except Exception as exc:
-                self.stop()
-                raise exc
-            if timestamp:
-                self.sender.push_sample(sample)
-                #self.sender.push_sample(chunk)
-                if debug:
-                    if self.info.nominal_srate() < 5:
-                        print(timestamp, sample)
-                    else:
-                        if (i % self.info.nominal_srate()) == 0:
-                            print(timestamp, sample)
-                if (i % self.info.nominal_srate()) == 0:
-                    self.monitor.push_sample([f'{self.info.name()} samples: {i}'])
-                i = i + 1
-            else:
-                print('no data')
-        self.is_running = False
-        print(f'Relay thread ended: {self.info.name()}')
-
-    def run_monitor(self, debug):
+    def run_monitor(self):
         """Monitor thread main loop."""
-        self.is_running = True
         i = 0
-        while self.is_running:
+        while not self.is_stopped():
             try:
                 sample, timestamp = self.inlet.pull_sample()
             except LostError as exc:
@@ -115,5 +117,4 @@ class RelayStream():
                 print(sample)
             else:
                 print('no data')
-        self.is_running = False
         print(f'Monitor thread ended: {self.info.name()}')

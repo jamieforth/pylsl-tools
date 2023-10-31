@@ -4,8 +4,7 @@ import argparse
 
 from pylsl import local_clock
 
-# from pylsltools.streams.control_stream import ControlClient
-from pylsltools.streams.test_stream import TestStream
+from pylsltools.streams import TestStream, ControlReceiver
 
 
 class Simulate:
@@ -33,8 +32,7 @@ class Simulate:
         self.channel_types = channel_types
         self.channel_units = channel_units
         if control_name:
-            print('Controller not implemented.')
-            # self.controller = ControlClient(control_name, self)
+            self.controller = ControlReceiver(control_name)
 
     def start(self, start_time=None, latency=None, max_time=None,
               max_samples=None, chunk_size=None, max_buffered=None,
@@ -43,6 +41,8 @@ class Simulate:
         if start_time is None:
             # Get start time in the main thread to synchronise streams.
             start_time = local_clock()
+        if latency is not None:
+            start_time = start_time
         streams = [TestStream(stream_idx, self.generators, self.name,
                               self.content_type, self.channel_count,
                               self.nominal_srate, self.channel_format,
@@ -163,7 +163,8 @@ def main():
         help='Control stream name.')
     parser.add_argument(
         '--latency',
-        default=0.2,
+        type=float,
+        default=0.5,
         help='Scheduling latency.')
     parser.add_argument(
         '--debug',

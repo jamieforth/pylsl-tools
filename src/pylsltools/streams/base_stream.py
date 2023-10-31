@@ -1,5 +1,6 @@
 """Base stream class."""
 
+import platform
 from multiprocessing import Event, Process
 
 from pylsl import IRREGULAR_RATE, StreamInfo
@@ -22,7 +23,7 @@ class BaseStream():
         self.stop_event.set()
 
     def is_stopped(self):
-        self.stop_event.is_set()
+        return self.stop_event.is_set()
 
 
 class DataStream(BaseStream, Process):
@@ -105,3 +106,35 @@ class DataStream(BaseStream, Process):
     def make_channel_labels(self, channel_count):
         return [f'ch:{channel_idx:0=2d}' for channel_idx in
                 range(channel_count)]
+
+
+class MarkerStream(BaseStream):
+    """Marker stream that does not run in a separate process."""
+    def __init__(self, name, *, content_type=None, source_id=None,
+                 manufacturer='pylsltools', **kwargs):
+
+        self.name = name
+        channel_count = 1
+        nominal_srate = IRREGULAR_RATE
+        channel_format = 'string'
+        # Use host name to identify source. If stream is interrupted due
+        # to network outage or the controller is restarted receivers
+        # should be able to recover.
+        if not source_id:
+            source_id = platform.node()
+
+        info = self.make_stream_info(name, content_type, channel_count,
+                                     nominal_srate, channel_format, source_id,
+                                     manufacturer)
+        super().__init__(info, **kwargs)
+
+    def make_stream_info(self, name, content_type, channel_count,
+                         nominal_srate, channel_format, source_id,
+                         manufacturer):
+        info = StreamInfo(name,
+                          content_type,
+                          channel_count,
+                          nominal_srate,
+                          channel_format,
+                          source_id)
+        return info
