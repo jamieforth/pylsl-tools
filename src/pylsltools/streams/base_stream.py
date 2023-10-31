@@ -63,7 +63,8 @@ class DataStream(BaseStream, Process):
         for i in range(channel_count):
             ch = channels.append_child('channel')
             ch.append_child_value('label', channel_labels[i])
-            ch.append_child_value('type', channel_types[i])
+            if channel_types:
+                ch.append_child_value('type', channel_types[i])
             if channel_units:
                 ch.append_child_value('unit', channel_units[i])
         return info
