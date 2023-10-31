@@ -74,6 +74,9 @@ class TestStream (DataStream):
                 logical_time = logical_time + delta
                 # Avoid drift.
                 time.sleep(max(0, logical_time - local_clock()))
+        except Exception as exc:
+            self.stop()
+            raise exc
         except KeyboardInterrupt:
             print(f'Stopping: {self.name}')
             self.stop()
