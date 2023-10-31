@@ -59,7 +59,7 @@ class TestStream (DataStream):
         logical_time = self.start_time
         delta = 1 / self.info.nominal_srate()
         try:
-            while not self.stop.is_set():
+            while not self.is_stopped():
                 now = local_clock()
                 elapsed_time = logical_time - self.start_time
                 sample = self.generate_sample(sample_count)
@@ -76,20 +76,20 @@ class TestStream (DataStream):
                 time.sleep(max(0, logical_time - local_clock()))
         except KeyboardInterrupt:
             print(f'Stopping: {self.name}')
-            self.stop.set()
+            self.stop()
         print(f'Ended: {self.name}.')
 
     def check_continue(self, elapsed_time, sample_count, max_time,
                        max_samples):
-        if not self.stop.is_set():
+        if not self.is_stopped():
             if max_time is not None:
                 if elapsed_time >= max_time:
                     print(f'{self.name} max time reached.')
-                    self.stop.set()
+                    self.stop()
             if max_samples is not None:
                 if sample_count >= max_samples:
                     print(f'{self.name} max samples reached.')
-                    self.stop.set()
+                    self.stop()
 
     def generate_sample(self, sample_idx):
         sample = [self.generate_channel_data(sample_idx, channel_idx)

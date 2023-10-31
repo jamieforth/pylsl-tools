@@ -72,9 +72,9 @@ class Simulate:
     def stop(self):
         """Stop all stream processes."""
         for stream in self.streams:
-            if not stream.stop.is_set():
+            if not stream.is_stopped():
                 print(f'Stopping: {stream.name}.')
-                stream.stop.set()
+                stream.stop()
         # for stream in self.streams:
         #     # Block until all child processes return.
         #     stream.join()

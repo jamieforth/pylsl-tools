@@ -2,28 +2,31 @@
 
 from multiprocessing import Event, Process
 
-from pylsl import StreamInfo, StreamOutlet, local_clock
+from pylsl import IRREGULAR_RATE, StreamInfo
 
 
-class BaseStream(Process):
-
+class BaseStream():
+    """Base stream initialised from an LSL info object."""
     def __init__(self, info, **kwargs):
-        # macOX and Windows default
-        # multiprocessing.set_start_method('spawn')
         print('BaseStream', info, kwargs)
         super().__init__(**kwargs)
         self.info = info
         print(info.as_xml())
-        print(kwargs)
         # Event to terminate the process.
-        self.stop = Event()
+        self.stop_event = Event()
 
     def run(self):
         pass
 
+    def stop(self):
+        self.stop_event.set()
 
-class DataStream(BaseStream):
+    def is_stopped(self):
+        self.stop_event.is_set()
 
+
+class DataStream(BaseStream, Process):
+    """Data stream that runs in a separate process."""
     def __init__(self, name, content_type, channel_count, nominal_srate,
                  channel_format, *, source_id=None, manufacturer='pylsltools',
                  channel_labels=None, channel_types=None, channel_units=None,
