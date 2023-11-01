@@ -21,16 +21,18 @@ class TestStream (DataStream):
               channel_labels, channel_types, channel_units, start_time,
               latency, max_time, max_samples, chunk_size, max_buffered, debug,
               kwargs)
-        self.stream_idx = stream_idx
-        self.channel_count = channel_count
         if name:
             name = f'{name} test stream {stream_idx} {" ".join(g for g in generators)}'
         else:
             name = f'Test stream {stream_idx} {" ".join(g for g in generators)}'
-        # Use script name and PID to identify source. If stream is
+        # If no source_id is provided default to script name and PID to
+        # identify the source. In the default case if a stream is
         # interrupted due to network outage consumers should be able to
-        # recover. However, if the script is restarted the PID will be
-        # different an appear as a new stream.
+        # automatically recover data up to max_buffered length (default
+        # 6 minutes). However, if the script is restarted the PID will
+        # be different and appear as a new LSL stream so automatic
+        # recovery will not work. To test LSL automatic recovery provide
+        # an explicit source_id.
         if source_id is None:
             source_id = f'{os.path.basename(__file__)}:{os.getpid()}'
 
@@ -40,6 +42,11 @@ class TestStream (DataStream):
                          channel_labels=channel_labels,
                          channel_types=channel_types,
                          channel_units=channel_units, **kwargs)
+
+        # Store values required by generators as class attributes.
+        self.stream_idx = stream_idx
+        self.channel_count = channel_count
+        self.nominal_srate = nominal_srate
 
         # Initialise local attributes.
         self.generators = generators
@@ -88,7 +95,7 @@ class TestStream (DataStream):
             self.stop()
             raise exc
         except KeyboardInterrupt:
-            print(f'Stopping: {self.name}')
+            print(f'Stopping: {self.name}.')
             self.stop()
         print(f'Ended: {self.name}.')
 
@@ -120,7 +127,7 @@ class TestStream (DataStream):
         if generator == 'counter+':
             return (sample_idx * self.channel_count) + channel_idx
         if generator == 'impulse':
-            if sample_idx % self.sample_rate == 0:
+            if sample_idx % self.nominal_srate == 0:
                 return 1
             else:
                 return 0
