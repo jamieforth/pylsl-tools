@@ -1,26 +1,33 @@
 """Test stream class."""
 
 import os
-import time
 import textwrap
+import time
 
 from pylsl import StreamOutlet, local_clock
 from pylsltools.streams import DataStream
 
 
 class TestStream (DataStream):
+    """Test stream to generate deterministic streams of data.
 
+    Each stream runs in it's own sub-process. Data is generated
+    sample-by-sample so it is not the most efficient implementation but
+    if performance becomes problematic latency can be increased to give
+    each process time to generate data. However, timestamps are set
+    according to logical time, so even if data is sent late is should
+    still be timestamped correctly.
+    """
     def __init__(self, stream_idx, generators, name, content_type,
                  channel_count, nominal_srate, channel_format, *,
                  source_id=None, channel_labels=None, channel_types=None,
-                 channel_units=None, start_time=None, latency=None,
-                 max_time=None, max_samples=None, chunk_size=None,
-                 max_buffered=None, debug=False, **kwargs):
+                 channel_units=None, start_time=None, max_time=None,
+                 max_samples=None, chunk_size=None, max_buffered=None,
+                 barrier=None, debug=False, **kwargs):
         print('TestStream', stream_idx, generators, name, content_type,
               channel_count, nominal_srate, channel_format, source_id,
               channel_labels, channel_types, channel_units, start_time,
-              latency, max_time, max_samples, chunk_size, max_buffered, debug,
-              kwargs)
+              max_time, max_samples, chunk_size, max_buffered, debug, kwargs)
         if name:
             name = f'{name} test stream {stream_idx} {" ".join(g for g in generators)}'
         else:
@@ -51,36 +58,38 @@ class TestStream (DataStream):
         # Initialise local attributes.
         self.generators = generators
         self.start_time = start_time
-        self.latency = latency
         self.max_time = max_time
         self.max_samples = max_samples
         self.chunk_size = chunk_size
         self.max_buffered = max_buffered
+        self.barrier = barrier
         self.debug = debug
 
     def run(self):
         if self.start_time is None:
             self.start_time = local_clock()
         sample_count = 0
-        logical_time = self.start_time + (self.latency)
+        logical_time = self.start_time
         delta = 1 / self.info.nominal_srate()
         self.outlet = StreamOutlet(self.info, self.chunk_size,
                                    self.max_buffered)
-        time.sleep(self.latency / 2)
+        nominal_srate = self.info.nominal_srate()
+        content_type = self.info.type()
+
+        # Ensure all processes wait here until all other sub-processes
+        # are initialised before entering main loop.
+        if self.barrier is not None:
+            self.barrier.wait()
         try:
             while not self.is_stopped():
                 now = local_clock()
                 elapsed_time = logical_time - self.start_time
-                sample = self.generate_sample(sample_count)
+                sample = self.generate_sample(elapsed_time, sample_count)
                 self.outlet.push_sample(sample, timestamp=logical_time)
-                if self.debug:
-                    if self.info.nominal_srate() <= 5:
-                        self.print(self.name, now, logical_time, elapsed_time,
-                                   sample)
-                    else:
-                        if (sample_count % self.info.nominal_srate()) == 0:
-                            self.print(self.name, now, logical_time,
-                                       elapsed_time, sample)
+                if self.debug and (nominal_srate <= 5
+                                   or (sample_count % nominal_srate) == 0):
+                    self.print(self.name, now, logical_time, elapsed_time,
+                               content_type, sample)
                 sample_count = sample_count + 1
                 self.check_continue(elapsed_time, sample_count, self.max_time,
                                     self.max_samples)
@@ -90,7 +99,7 @@ class TestStream (DataStream):
                 if delay > 0:
                     time.sleep(delay)
                 else:
-                    print(f'LATE: {self.name} {delay}. Increase latency!')
+                    print(f'LATE: {self.name} {delay:.6f} try increasing latency!')
         except Exception as exc:
             self.stop()
             raise exc
@@ -132,11 +141,11 @@ class TestStream (DataStream):
             else:
                 return 0
 
-    def print(self, name, now, timestamp, elapsed_time, data):
+    def print(self, name, now, timestamp, elapsed_time, content_type, data):
         print(textwrap.fill(textwrap.dedent(f'''
         {name}:
         now: {now:.6f},
         timestamp: {timestamp:.6f},
         elapsed: {elapsed_time:.2f},
-        data: {data}
+        {content_type}: {data}
         '''), 200))
