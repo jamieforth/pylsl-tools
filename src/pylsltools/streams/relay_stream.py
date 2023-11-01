@@ -45,11 +45,11 @@ class RelayStream(DataStream):
         # Chunk size should be 1 when re-encoding timestamps to ensure
         # we get samples as fast as possible.
 
-        # FIXME: Recover=True will keep this process alive forever and
-        # never throw a LostError. Recover=False will end this process
-        # and delegate restarting to the continuous resolver if the
-        # stream comes back online. Which is best? Handing control back
-        # to the continuous resolver allows for a graceful exit.
+        # Recover=True will keep this process alive forever and never
+        # throw a LostError. Recover=False will end this process and
+        # delegate restarting to the continuous resolver if the stream
+        # comes back online. Which is best? Handing control back to the
+        # continuous resolver at least allows for a graceful exit.
         inlet = StreamInlet(self.sender_info,
                             max_buflen=self.max_buffered,
                             max_chunklen=self.chunk_size,
@@ -61,6 +61,7 @@ class RelayStream(DataStream):
             monitor_outlet = StreamOutlet(self.monitor.info, chunk_size=1)
 
         nominal_srate = self.sender_info.nominal_srate()
+        content_type = self.sender_info.type()
         sample_count = 0
         try:
             while not self.is_stopped():
@@ -77,20 +78,17 @@ class RelayStream(DataStream):
                     raise exc
                 if timestamp:
                     if not self.keep_orig_timestamps:
+                        # Re-encode timestamp.
                         timestamp = now
-                    # Re-encode timestamp.
                     outlet.push_sample(sample, timestamp)
-                    if self.debug:
-                        if nominal_srate <= 5:
-                            self.print(self.name, now, timestamp, sample)
-                        else:
-                            if (sample_count % nominal_srate) == 0:
-                                self.print(self.name, now, timestamp, sample)
-                    if self.monitor:
-                        if (sample_count % nominal_srate) == 0:
-                            monitor_outlet.push_sample([
-                                f'{self.sender_info.name()} samples: {sample_count}'
-                            ])
+                    if self.debug and (nominal_srate <= 5
+                                       or (sample_count % nominal_srate) == 0):
+                        self.print(self.name, now, timestamp, content_type,
+                                   sample)
+                    if self.monitor and (sample_count % nominal_srate) == 0:
+                        monitor_outlet.push_sample([
+                            f'{self.sender_info.name()} samples: {sample_count}'
+                        ])
                     sample_count = sample_count + 1
                 else:
                     print('no data')
@@ -102,10 +100,10 @@ class RelayStream(DataStream):
             self.stop()
         print(f'Ended: {self.info.name()}')
 
-    def print(self, name, now, timestamp, data):
+    def print(self, name, now, timestamp, content_type, data):
         print(textwrap.fill(textwrap.dedent(f'''
         {name}:
         now: {now:.6f},
         timestamp: {timestamp:.6f},
-        data: {data}
+        {content_type}: {data}
         '''), 200))

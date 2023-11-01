@@ -2,7 +2,7 @@
 
 import argparse
 import platform
-from threading import Thread, Event
+from threading import Event, Thread
 from time import sleep
 
 from pylsl import ContinuousResolver
