@@ -120,12 +120,12 @@ class TestStream (DataStream):
                     print(f'{self.name} max samples reached.')
                     self.stop()
 
-    def generate_sample(self, sample_idx):
-        sample = [self.generate_channel_data(sample_idx, channel_idx)
+    def generate_sample(self, time, sample_idx):
+        sample = [self.generate_channel_data(time, sample_idx, channel_idx)
                   for channel_idx in range(self.channel_count)]
         return sample
 
-    def generate_channel_data(self, sample_idx, channel_idx):
+    def generate_channel_data(self, time, sample_idx, channel_idx):
         generator = self.generators[channel_idx % len(self.generators)]
         if generator == 'stream-id':
             return self.stream_idx
