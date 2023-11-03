@@ -13,7 +13,7 @@ class Simulate:
 
     controller = None
 
-    def __init__(self, num_streams, generators, name, content_type,
+    def __init__(self, num_streams, functions, name, content_type,
                  channel_count, nominal_srate, channel_format, source_id,
                  channel_labels=None, channel_types=None, channel_units=None,
                  control_name=None):
@@ -22,7 +22,7 @@ class Simulate:
         Optionally set up an input control stream.
         """
         self.num_streams = num_streams
-        self.generators = generators
+        self.functions = functions
         self.name = name
         self.content_type = content_type
         self.channel_count = channel_count
@@ -46,7 +46,7 @@ class Simulate:
             start_time = local_clock()
         # Create barrier for sub-process synchronisation.
         self.barrier = Barrier(self.num_streams)
-        streams = [TestStream(stream_idx, self.generators, self.name,
+        streams = [TestStream(stream_idx, self.functions, self.name,
                               self.content_type, self.channel_count,
                               self.nominal_srate, self.channel_format,
                               source_id=self.source_id,
@@ -111,13 +111,13 @@ def main():
         type=int,
         help='Synthetic data stream sample rate.')
     parser.add_argument(
-        '-g',
-        '--generators',
+        '--fn',
         nargs='+',
         default=['counter'],
-        choices=['stream-id', 'stream-seq', 'counter', 'counter+', 'impulse'],
-        help="""Generator to use to simulate channel data. If multiple
-        generators are provided they will be recycled to match the
+        choices=['stream-id', 'stream-seq', 'counter', 'counter+', 'impulse',
+                 'sine'],
+        help="""Function(s) to use to simulate channel data. If multiple
+        function names are provided they will be recycled to match the
         number of channels.""")
     parser.add_argument(
         '--name',
@@ -184,7 +184,7 @@ def main():
         action='store_true',
         help='Print extra debugging information.')
     args = parser.parse_args()
-    simulate = Simulate(args.num_streams, args.generators, args.name,
+    simulate = Simulate(args.num_streams, args.fn, args.name,
                         args.content_type, args.num_channels, args.sample_rate,
                         args.channel_format, args.source_id,
                         channel_types=args.channel_type,

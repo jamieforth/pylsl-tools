@@ -1,5 +1,6 @@
 """Test stream class."""
 
+import math
 import os
 import textwrap
 import time
@@ -18,22 +19,22 @@ class TestStream (DataStream):
     according to logical time, so even if data is sent late is should
     still be timestamped correctly.
     """
-    def __init__(self, stream_idx, generators, name, content_type,
+    def __init__(self, stream_idx, functions, name, content_type,
                  channel_count, nominal_srate, channel_format, *,
                  source_id=None, channel_labels=None, channel_types=None,
                  channel_units=None, start_time=None, latency=None,
                  max_time=None, max_samples=None, chunk_size=None,
                  max_buffered=None, barrier=None, controller=None, debug=False,
                  **kwargs):
-        print('TestStream', stream_idx, generators, name, content_type,
+        print('TestStream', stream_idx, functions, name, content_type,
               channel_count, nominal_srate, channel_format, source_id,
               channel_labels, channel_types, channel_units, start_time,
               latency, max_time, max_samples, chunk_size, max_buffered,
               debug, kwargs)
         if name:
-            name = f'{name} test stream {stream_idx} {" ".join(g for g in generators)}'
+            name = f'{name} test stream {stream_idx} {" ".join(g for g in functions)}'
         else:
-            name = f'Test stream {stream_idx} {" ".join(g for g in generators)}'
+            name = f'Test stream {stream_idx} {" ".join(g for g in functions)}'
         # If no source_id is provided default to script name and PID to
         # identify the source. In the default case if a stream is
         # interrupted due to network outage consumers should be able to
@@ -52,14 +53,14 @@ class TestStream (DataStream):
                          channel_types=channel_types,
                          channel_units=channel_units, **kwargs)
 
-        # Store values required by generators as class attributes.
+        # Store values required by functions as class attributes.
         self.sample_count = 0
         self.stream_idx = stream_idx
         self.channel_count = channel_count
         self.nominal_srate = nominal_srate
 
         # Initialise local attributes.
-        self.generators = generators
+        self.functions = functions
         self.start_time = start_time
         self.latency = latency
         self.max_time = max_time
@@ -180,20 +181,22 @@ class TestStream (DataStream):
         return sample
 
     def generate_channel_data(self, time, sample_idx, channel_idx):
-        generator = self.generators[channel_idx % len(self.generators)]
-        if generator == 'stream-id':
+        fn = self.functions[channel_idx % len(self.functions)]
+        if fn == 'stream-id':
             return self.stream_idx
-        if generator == 'stream-seq':
+        if fn == 'stream-seq':
             return self.stream_idx + channel_idx
-        if generator == 'counter':
+        if fn == 'counter':
             return sample_idx
-        if generator == 'counter+':
+        if fn == 'counter+':
             return (sample_idx * self.channel_count) + channel_idx
-        if generator == 'impulse':
+        if fn == 'impulse':
             if sample_idx % self.nominal_srate == 0:
                 return 1
             else:
                 return 0
+        if fn == 'sine':
+            return math.sin((2 * math.pi) * 1 * time)
 
     def print(self, name, now, timestamp, elapsed_time, content_type, data):
         print(textwrap.fill(textwrap.dedent(f'''
