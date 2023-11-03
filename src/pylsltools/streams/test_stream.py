@@ -55,6 +55,7 @@ class TestStream (DataStream):
 
         # Store values required by functions as class attributes.
         self.sample_count = 0
+        self.elapsed_time = 0
         self.stream_idx = stream_idx
         self.channel_count = channel_count
         self.nominal_srate = nominal_srate
