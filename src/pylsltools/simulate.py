@@ -1,7 +1,12 @@
 """Test programme to simulate LSL streams."""
 
 import argparse
-from multiprocessing import Barrier
+import sys
+if 'linux' in sys.platform:
+    from multiprocessing import Barrier
+elif 'win32' in sys.platform:
+    from threading import Barrier
+
 
 from pylsl import local_clock
 
