@@ -1,5 +1,8 @@
+"""Script to send control messages over LSL."""
+
 import argparse
 from pylsltools.streams import ControlSender
+
 
 def main():
     """Control stream."""
@@ -7,7 +10,8 @@ def main():
     stream for sending messages to other pylsltools streams.""")
     parser.add_argument(
         '--name',
-        help='Additional identifier to append to stream name.')
+        required=True,
+        help='Name of the control stream.')
     parser.add_argument(
         '--content-type',
         default='control',
@@ -17,8 +21,9 @@ def main():
         help='Unique identifier for stream source.')
     parser.add_argument(
         '--latency',
-        default=0.2,
-        help='Scheduling latency.')
+        type=float,
+        default=0.5,
+        help='Scheduling latency in seconds.')
     parser.add_argument(
         '--debug',
         action='store_true',
@@ -26,14 +31,14 @@ def main():
 
     args = parser.parse_args()
     controller = ControlSender(args.name, content_type=args.content_type,
-                               source_id=args.source_id, latency=args.latency,
-                               debug=args.debug)
-    print('before start')
+                               source_id=args.source_id,
+                               latency=args.latency, debug=args.debug)
     try:
-        controller.run()
-        print('after start')
+        controller.start()
+        # Block here until controller thread returns.
+        controller.join()
     except Exception as exc:
-        # Stop all streams if one raises an error.
+        # Stop controller thread.
         controller.stop()
         raise exc
     except KeyboardInterrupt:
