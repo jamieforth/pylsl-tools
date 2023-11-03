@@ -73,9 +73,6 @@ class RelayStream(DataStream):
                     self.stop()
                     print(f'{self.name}: {exc}')
                     return
-                except Exception as exc:
-                    self.stop()
-                    raise exc
                 if timestamp:
                     if not self.keep_orig_timestamps:
                         # Re-encode timestamp.
