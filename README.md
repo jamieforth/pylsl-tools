@@ -16,8 +16,9 @@ pipenv install
 ```
 
 ## Usage
-
 ### lsl-simulate
+
+Generate test synthetic data streams.
 
 ```
 # Low sample-rate test with two three-channel streams.
@@ -30,6 +31,29 @@ lsl-simulate --num-streams 10 --num-channels 30 --sample-rate 500 --content-type
 ```
 
 See `lsl-simulate --help` for all options.
+
+Streams can also be remote controlled by an `lsl-control` stream by
+passing in the control stream name, e.g.
+
+```
+lsl-simulate --control-name ctrl1 ...
+```
+
+
+### lsl-control
+
+Send timestamped control messages to other streams.
+
+```
+# Send control messages to other devices.
+lsl-control --name ctrl1
+```
+
+This will then allow commands to be typed into the terminal which will
+be executed by receiving streams at the correct time. For this to work
+reliably there must be a specified latency larger than any network
+latency (default 0.5 seconds). Any messages that arrive late will
+print a warning but streams should be able to catch up.
 
 
 ### lsl-relay
@@ -46,4 +70,16 @@ lsl-relay --keep-orig-timestamps --monitor
 ```
 # Run with Ant EEGO App.
 lsl-relay --monitor
+```
+
+See `lsl-relay --help` for all options.
+
+
+### lsl-monitor
+
+Show monitoring information for all `_monitor_` streams on the network
+(created by `lsl-relay --monitor`).
+
+```
+lsl-monitor
 ```

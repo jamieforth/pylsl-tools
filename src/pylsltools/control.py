@@ -1,4 +1,4 @@
-"""Script to send control messages over LSL."""
+"""Script to send timestamped control messages over LSL."""
 
 import argparse
 from pylsltools.streams import ControlSender
@@ -7,7 +7,8 @@ from pylsltools.streams import ControlSender
 def main():
     """Control stream."""
     parser = argparse.ArgumentParser(description="""Create a controller
-    stream for sending messages to other pylsltools streams.""")
+    stream for sending timestamped messages to other pylsltools
+    streams.""")
     parser.add_argument(
         '--name',
         required=True,
