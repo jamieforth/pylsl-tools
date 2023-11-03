@@ -1,9 +1,11 @@
 """Base stream class."""
 
+import sys
 import json
 import multiprocessing
 import threading
-from multiprocessing import Process
+if 'linux' in sys.platform:
+    from multiprocessing import Process
 from threading import Thread
 
 from pylsl import IRREGULAR_RATE, StreamInfo
@@ -23,8 +25,12 @@ class BaseStream():
         self.info = info
         #print(info.as_xml())
 
+if 'linux' in sys.platform:
+    dataStreamSuperClass = Process
+elif 'win32' in sys.platform:
+    dataStreamSuperClass = Thread
 
-class DataStream(BaseStream, Process):
+class DataStream(BaseStream, dataStreamSuperClass):
     """Data stream that runs in a separate process."""
 
     def __init__(self, name, content_type, channel_count, nominal_srate,
