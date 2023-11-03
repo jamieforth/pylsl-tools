@@ -1,33 +1,40 @@
 """Base stream class."""
 
-import platform
-from multiprocessing import Event, Process
+import multiprocessing
+import threading
+from multiprocessing import Process
+from threading import Thread
 
-from pylsl import IRREGULAR_RATE, StreamInfo
+from pylsl import StreamInfo
 
 
 class BaseStream():
     """Base stream initialised from an LSL info object."""
+
+    info = None
+
     def __init__(self, info, **kwargs):
-        print('BaseStream', info, kwargs)
         super().__init__(**kwargs)
+        if info:
+            self.set_info(info)
+
+    def set_info(self, info):
         self.info = info
         print(info.as_xml())
-        # Event to terminate the process.
-        self.stop_event = Event()
 
     def run(self):
         pass
 
     def stop(self):
-        self.stop_event.set()
+        pass
 
     def is_stopped(self):
-        return self.stop_event.is_set()
+        pass
 
 
 class DataStream(BaseStream, Process):
     """Data stream that runs in a separate process."""
+
     def __init__(self, name, content_type, channel_count, nominal_srate,
                  channel_format, *, source_id=None, manufacturer='pylsltools',
                  channel_labels=None, channel_types=None, channel_units=None,
@@ -40,6 +47,15 @@ class DataStream(BaseStream, Process):
                                      manufacturer, channel_labels,
                                      channel_types, channel_units)
         super().__init__(info, name=name, **kwargs)
+
+        # Event to terminate the process.
+        self.stop_event = multiprocessing.Event()
+
+    def stop(self):
+        self.stop_event.set()
+
+    def is_stopped(self):
+        return self.stop_event.is_set()
 
     def make_stream_info(self, name, content_type, channel_count,
                          nominal_srate, channel_format, source_id,
@@ -108,33 +124,18 @@ class DataStream(BaseStream, Process):
                 range(channel_count)]
 
 
-class MarkerStream(BaseStream):
-    """Marker stream that does not run in a separate process."""
-    def __init__(self, name, *, content_type=None, source_id=None,
-                 manufacturer='pylsltools', **kwargs):
+class MarkerStream(BaseStream, Thread):
+    """Marker stream that runs in a separate thread."""
 
-        self.name = name
-        channel_count = 1
-        nominal_srate = IRREGULAR_RATE
-        channel_format = 'string'
-        # Use host name to identify source. If stream is interrupted due
-        # to network outage or the controller is restarted receivers
-        # should be able to recover.
-        if not source_id:
-            source_id = platform.node()
+    def __init__(self, info, **kwargs):
 
-        info = self.make_stream_info(name, content_type, channel_count,
-                                     nominal_srate, channel_format, source_id,
-                                     manufacturer)
         super().__init__(info, **kwargs)
 
-    def make_stream_info(self, name, content_type, channel_count,
-                         nominal_srate, channel_format, source_id,
-                         manufacturer):
-        info = StreamInfo(name,
-                          content_type,
-                          channel_count,
-                          nominal_srate,
-                          channel_format,
-                          source_id)
-        return info
+        # Event to terminate the process.
+        self.stop_event = threading.Event()
+
+    def stop(self):
+        self.stop_event.set()
+
+    def is_stopped(self):
+        return self.stop_event.is_set()
