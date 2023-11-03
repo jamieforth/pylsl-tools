@@ -13,8 +13,9 @@ from pylsltools.streams import DataStream, MonitorSender
 
 class RelayStream(DataStream):
 
-    def __init__(self, sender_info, keep_orig_timestamps=False, monitor=False,
-                 chunk_size=1, max_buffered=360, debug=False, **kwargs):
+    def __init__(self, sender_info, keep_orig_timestamps=False, output=True,
+                 monitor=True, chunk_size=1, max_buffered=360, debug=False,
+                 **kwargs):
 
         print(f'sender info: {sender_info.as_xml()}')
         self.name = '_relay_' + sender_info.name()
@@ -30,6 +31,7 @@ class RelayStream(DataStream):
 
         self.sender_info = sender_info
         self.keep_orig_timestamps = keep_orig_timestamps
+        self.output = output
         self.monitor = monitor
         self.chunk_size = chunk_size
         self.max_buffered = max_buffered
@@ -51,8 +53,9 @@ class RelayStream(DataStream):
                             max_chunklen=self.chunk_size,
                             recover=False,
                             processing_flags=0)
-        outlet = StreamOutlet(self.info, self.chunk_size,
-                              self.max_buffered)
+        if self.output:
+            outlet = StreamOutlet(self.info, self.chunk_size,
+                                  self.max_buffered)
 
         if self.monitor:
             self.monitor = MonitorSender('_monitor_' + self.sender_info.name(),
@@ -77,7 +80,8 @@ class RelayStream(DataStream):
                     if not self.keep_orig_timestamps:
                         # Re-encode timestamp.
                         timestamp = now
-                    outlet.push_sample(sample, timestamp)
+                    if self.output:
+                        outlet.push_sample(sample, timestamp)
                     if self.debug and (nominal_srate <= 5
                                        or (sample_count % nominal_srate) == 0):
                         self.print(self.name, now, timestamp, content_type,

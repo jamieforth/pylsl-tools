@@ -19,13 +19,14 @@ class Relay:
         self.stop_event = Event()
         self.active_streams = {}
 
-    def start(self, chunk_size, max_buffered, keep_orig_timestamps, monitor,
-              debug=False):
+    def start(self, chunk_size, max_buffered, keep_orig_timestamps, output,
+              monitor, debug=False):
         resolver = ContinuousResolver(pred=self.pred, forget_after=1)
 
         self.thread = Thread(target=self.run, args=[resolver, chunk_size,
                                                     max_buffered,
                                                     keep_orig_timestamps,
+                                                    output,
                                                     monitor,
                                                     debug])
         self.thread.start()
@@ -33,7 +34,7 @@ class Relay:
         self.thread.join()
 
     def run(self, resolver, chunk_size, max_buffered, keep_orig_timestamps,
-            monitor, debug):
+            output, monitor, debug):
         while not self.is_stopped():
             # FIXME: Improve this? Continuous resolver always returns a
             # new StreamInfo object so we need to continually regenerate
@@ -42,9 +43,9 @@ class Relay:
             for stream in streams:
                 stream_key = self.make_stream_key(stream)
                 if stream_key not in self.active_streams.keys():
-                    new_stream = RelayStream(
-                        stream, keep_orig_timestamps, monitor, chunk_size,
-                        max_buffered, debug)
+                    new_stream = RelayStream(stream, keep_orig_timestamps,
+                                             output, monitor, chunk_size,
+                                             max_buffered, debug)
                     self.active_streams[stream_key] = new_stream
                     new_stream.start()
                     print('New stream added.')
@@ -93,8 +94,14 @@ def main():
         action='store_true',
         help='Enable relay of non-local streams.')
     parser.add_argument(
+        '--output',
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help='Disable relay output.')
+    parser.add_argument(
         '--monitor',
-        action='store_true',
+        default=True,
+        action=argparse.BooleanOptionalAction,
         help='Enable monitoring stream.')
     parser.add_argument(
         '--keep-orig-timestamps',
@@ -148,6 +155,7 @@ def main():
         relay.start(chunk_size=args.chunk_size,
                     max_buffered=args.max_buffered,
                     keep_orig_timestamps=args.keep_orig_timestamps,
+                    output=args.output,
                     monitor=args.monitor,
                     debug=args.debug)
     except Exception as exc:
