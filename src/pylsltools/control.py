@@ -31,9 +31,11 @@ def main():
         help='Print extra debugging information.')
 
     args = parser.parse_args()
-    controller = ControlSender(args.name, content_type=args.content_type,
+    controller = ControlSender(args.name,
+                               content_type=args.content_type,
                                source_id=args.source_id,
-                               latency=args.latency, debug=args.debug)
+                               latency=args.latency,
+                               debug=args.debug)
     try:
         controller.start()
         # Block here until controller thread returns.

@@ -199,7 +199,7 @@ class TestStream (DataStream):
             return math.sin((2 * math.pi) * 1 * time)
 
     def print(self, name, now, timestamp, elapsed_time, content_type, data):
-        print(textwrap.fill(textwrap.dedent(f'''
+        print(textwrap.fill(textwrap.dedent(f'''\
         {name}:
         now: {now:.6f},
         timestamp: {timestamp:.6f},

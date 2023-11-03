@@ -1,11 +1,12 @@
 """Base stream class."""
 
+import json
 import multiprocessing
 import threading
 from multiprocessing import Process
 from threading import Thread
 
-from pylsl import StreamInfo
+from pylsl import IRREGULAR_RATE, StreamInfo
 
 
 class BaseStream():
@@ -20,16 +21,7 @@ class BaseStream():
 
     def set_info(self, info):
         self.info = info
-        print(info.as_xml())
-
-    def run(self):
-        pass
-
-    def stop(self):
-        pass
-
-    def is_stopped(self):
-        pass
+        #print(info.as_xml())
 
 
 class DataStream(BaseStream, Process):
@@ -50,6 +42,9 @@ class DataStream(BaseStream, Process):
 
         # Event to terminate the process.
         self.stop_event = multiprocessing.Event()
+
+    def run(self):
+        pass
 
     def stop(self):
         self.stop_event.set()
@@ -124,7 +119,35 @@ class DataStream(BaseStream, Process):
                 range(channel_count)]
 
 
-class MarkerStream(BaseStream, Thread):
+class BaseMarkerStream(BaseStream):
+    """Simple marker stream."""
+
+    def __init__(self, info, **kwargs):
+
+        super().__init__(info, **kwargs)
+
+    def make_stream_info(self, name, content_type, source_id, manufacturer):
+        channel_count = 1
+        nominal_srate = IRREGULAR_RATE
+        channel_format = 'string'
+
+        info = StreamInfo(name,
+                          content_type,
+                          channel_count,
+                          nominal_srate,
+                          channel_format,
+                          source_id)
+        return info
+
+    def parse_message(self, message):
+        message = message[0]
+        if message:
+            return json.loads(message)
+        else:
+            return None
+
+
+class MarkerStreamThread(BaseMarkerStream, Thread):
     """Marker stream that runs in a separate thread."""
 
     def __init__(self, info, **kwargs):
@@ -133,6 +156,9 @@ class MarkerStream(BaseStream, Thread):
 
         # Event to terminate the process.
         self.stop_event = threading.Event()
+
+    def run(self):
+        pass
 
     def stop(self):
         self.stop_event.set()

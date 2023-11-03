@@ -8,7 +8,7 @@ timestamps before relaying across the network.
 import textwrap
 
 from pylsl import (LostError, StreamInlet, StreamOutlet, local_clock)
-from pylsltools.streams import DataStream, MarkerStream
+from pylsltools.streams import DataStream, MonitorSender
 
 
 class RelayStream(DataStream):
@@ -30,11 +30,7 @@ class RelayStream(DataStream):
 
         self.sender_info = sender_info
         self.keep_orig_timestamps = keep_orig_timestamps
-        if monitor:
-            self.monitor = MarkerStream('_monitor_' + self.sender_info.name(),
-                                        content_type='monitor')
-        else:
-            self.monitor = None
+        self.monitor = monitor
         self.chunk_size = chunk_size
         self.max_buffered = max_buffered
         self.debug = debug
@@ -57,9 +53,13 @@ class RelayStream(DataStream):
                             processing_flags=0)
         outlet = StreamOutlet(self.info, self.chunk_size,
                               self.max_buffered)
-        if self.monitor:
-            monitor_outlet = StreamOutlet(self.monitor.info, chunk_size=1)
 
+        if self.monitor:
+            self.monitor = MonitorSender('_monitor_' + self.sender_info.name(),
+                                         content_type='monitor',
+                                         debug=self.debug)
+
+        sender_name = self.sender_info.name()
         nominal_srate = self.sender_info.nominal_srate()
         content_type = self.sender_info.type()
         sample_count = 0
@@ -83,9 +83,8 @@ class RelayStream(DataStream):
                         self.print(self.name, now, timestamp, content_type,
                                    sample)
                     if self.monitor and (sample_count % nominal_srate) == 0:
-                        monitor_outlet.push_sample([
-                            f'{self.sender_info.name()} samples: {sample_count}'
-                        ])
+                        self.monitor.send(name=sender_name,
+                                          sample_count=sample_count)
                     sample_count = sample_count + 1
                 else:
                     print('no data')
@@ -98,7 +97,7 @@ class RelayStream(DataStream):
         print(f'Ended: {self.info.name()}')
 
     def print(self, name, now, timestamp, content_type, data):
-        print(textwrap.fill(textwrap.dedent(f'''
+        print(textwrap.fill(textwrap.dedent(f'''\
         {name}:
         now: {now:.6f},
         timestamp: {timestamp:.6f},

@@ -13,15 +13,14 @@ from pylsltools.streams import RelayStream
 class Relay:
     """Relay matching streams."""
 
-    stop_event = Event()
-    active_streams = {}
-
     def __init__(self, pred, control_name):
         self.pred = pred
         self.control_name = control_name
+        self.stop_event = Event()
+        self.active_streams = {}
 
     def start(self, chunk_size, max_buffered, keep_orig_timestamps, monitor,
-              debug):
+              debug=False):
         resolver = ContinuousResolver(pred=self.pred, forget_after=1)
 
         self.thread = Thread(target=self.run, args=[resolver, chunk_size,
@@ -58,6 +57,7 @@ class Relay:
         self.stop_event.set()
         for stream in self.active_streams.values():
             stream.stop()
+        for stream in self.active_streams.values():
             stream.join()
 
     def is_stopped(self):
@@ -126,10 +126,12 @@ def main():
 
     if len(pred) > 0:
         pred = ("not(starts-with(name, '_relay_')) and " +
-                "not(starts-with(name, '_monitor_')) and ") + pred
+                "not(starts-with(name, '_monitor_')) and " +
+                "not(type='control')) and ") + pred
     else:
         pred = ("not(starts-with(name, '_relay_')) and " +
-                "not(starts-with(name, '_monitor_'))")
+                "not(starts-with(name, '_monitor_')) and " +
+                "not(type='control')")
     if not args.non_local:
         pred = f"hostname='{platform.node()}' and " + pred
     print(f'Stream matching predicate: {repr(pred)}')

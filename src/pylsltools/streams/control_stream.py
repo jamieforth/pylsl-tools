@@ -1,15 +1,13 @@
 
 import json
-import multiprocessing
 import platform
-import threading
 import time
 from enum import IntEnum, auto
 from multiprocessing import Condition, Value
 
-from pylsl import (IRREGULAR_RATE, LostError, StreamInfo, StreamInlet,
-                   StreamOutlet, local_clock, proc_ALL, resolve_bypred)
-from pylsltools.streams import MarkerStream
+from pylsl import (LostError, StreamInlet, StreamOutlet, local_clock, proc_ALL,
+                   resolve_bypred)
+from pylsltools.streams import MarkerStreamThread
 
 
 class States(IntEnum):
@@ -18,25 +16,22 @@ class States(IntEnum):
     QUIT = auto()
 
 
-class ControlSender(MarkerStream):
+class ControlSender(MarkerStreamThread):
     """Control stream sending thread."""
 
     states = States
 
     def __init__(self, name, *, content_type='control', source_id=None,
-                 latency=0.5, manufacturer='pylsltools', debug=False, **kwargs):
+                 latency=0.5, manufacturer='pylsltools', debug=False,
+                 **kwargs):
 
-        channel_count = 1
-        nominal_srate = IRREGULAR_RATE
-        channel_format = 'string'
         # Use host name to identify source. If stream is interrupted due
         # to network outage or the controller is restarted receivers
         # should be able to recover.
         if not source_id:
             source_id = platform.node()
 
-        info = self.make_stream_info(name, content_type, channel_count,
-                                     nominal_srate, channel_format, source_id,
+        info = self.make_stream_info(name, content_type, source_id,
                                      manufacturer)
 
         super().__init__(info, **kwargs)
@@ -45,17 +40,6 @@ class ControlSender(MarkerStream):
         self.name = name
         self.latency = latency
         self.debug = debug
-
-    def make_stream_info(self, name, content_type, channel_count,
-                         nominal_srate, channel_format, source_id,
-                         manufacturer):
-        info = StreamInfo(name,
-                          content_type,
-                          channel_count,
-                          nominal_srate,
-                          channel_format,
-                          source_id)
-        return info
 
     def run(self):
         self.outlet = StreamOutlet(self.info, chunk_size=1)
@@ -95,12 +79,12 @@ class ControlSender(MarkerStream):
         time.sleep(1)
 
 
-class ControlReceiver(MarkerStream):
+class ControlReceiver(MarkerStreamThread):
     """Control stream receiver thread."""
 
     states = States
 
-    def __init__(self, name, **kwargs):
+    def __init__(self, name, debug=False, **kwargs):
         super().__init__(None, **kwargs)
 
         # Set class attributes.
@@ -108,10 +92,10 @@ class ControlReceiver(MarkerStream):
         self.__timestamp = Value('f', 0.0)
         self.__state = Value('i', self.states.STOP)
         self.condition = Condition()
+        self.debug = debug
 
     def run(self):
         print('Waiting for control stream.')
-        print(multiprocessing.current_process(), threading.current_thread())
         sender_info = resolve_bypred(f"name='{self.name}'")[0]
         self.set_info(sender_info)
 
@@ -156,10 +140,3 @@ class ControlReceiver(MarkerStream):
 
     def state(self):
         return self.__state.value
-
-    def parse_message(self, message):
-        message = message[0]
-        if message:
-            return json.loads(message)
-        else:
-            return None
