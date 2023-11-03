@@ -21,13 +21,15 @@ class TestStream (DataStream):
     def __init__(self, stream_idx, generators, name, content_type,
                  channel_count, nominal_srate, channel_format, *,
                  source_id=None, channel_labels=None, channel_types=None,
-                 channel_units=None, start_time=None, max_time=None,
-                 max_samples=None, chunk_size=None, max_buffered=None,
-                 barrier=None, debug=False, **kwargs):
+                 channel_units=None, start_time=None, latency=None,
+                 max_time=None, max_samples=None, chunk_size=None,
+                 max_buffered=None, barrier=None, controller=None, debug=False,
+                 **kwargs):
         print('TestStream', stream_idx, generators, name, content_type,
               channel_count, nominal_srate, channel_format, source_id,
               channel_labels, channel_types, channel_units, start_time,
-              max_time, max_samples, chunk_size, max_buffered, debug, kwargs)
+              latency, max_time, max_samples, chunk_size, max_buffered,
+              debug, kwargs)
         if name:
             name = f'{name} test stream {stream_idx} {" ".join(g for g in generators)}'
         else:
@@ -51,6 +53,7 @@ class TestStream (DataStream):
                          channel_units=channel_units, **kwargs)
 
         # Store values required by generators as class attributes.
+        self.sample_count = 0
         self.stream_idx = stream_idx
         self.channel_count = channel_count
         self.nominal_srate = nominal_srate
@@ -58,48 +61,71 @@ class TestStream (DataStream):
         # Initialise local attributes.
         self.generators = generators
         self.start_time = start_time
+        self.latency = latency
         self.max_time = max_time
         self.max_samples = max_samples
         self.chunk_size = chunk_size
         self.max_buffered = max_buffered
         self.barrier = barrier
+        self.controller = controller
         self.debug = debug
 
     def run(self):
-        if self.start_time is None:
-            self.start_time = local_clock()
-        sample_count = 0
-        logical_time = self.start_time
         delta = 1 / self.info.nominal_srate()
-        self.outlet = StreamOutlet(self.info, self.chunk_size,
-                                   self.max_buffered)
         nominal_srate = self.info.nominal_srate()
         content_type = self.info.type()
+        self.outlet = StreamOutlet(self.info, self.chunk_size,
+                                   self.max_buffered)
 
-        # Ensure all processes wait here until all other sub-processes
-        # are initialised before entering main loop.
+        # Initialise start time. If a controller is used time will be
+        # initialised later according to a start control message
+        # timestamp.
+        if self.controller is not None:
+            # Initialise current state to keep track of state changes.
+            self.state = None
+        else:
+            if not self.start_time:
+                # Non-synchronised timestamps: Use local real-time of
+                # this process.
+                self.start_time = local_clock()
+            # Initialise time values.
+            self.initialise_time(self.start_time)
+
+        # FIXME: Need to synchronise wait time over all processes.
+        # if self.wait_for_consumers:
+        #     print('Waiting for consumers.')
+        #     timeout = 1
+        #     start_delay = timeout
+        #     try:
+        #         while self.outlet.wait_for_consumers(timeout):
+        #             start_delay = start_delay + timeout
+        #     except KeyboardInterrupt:
+        #         pass
+        #     print(start_delay)
+        #     self.start_time = self.start_time + start_delay
+
+        # Synchronise sub-processes before entering main loop.
         if self.barrier is not None:
             self.barrier.wait()
+
         try:
-            while not self.is_stopped():
-                now = local_clock()
-                elapsed_time = logical_time - self.start_time
-                sample = self.generate_sample(elapsed_time, sample_count)
-                self.outlet.push_sample(sample, timestamp=logical_time)
+            while self.check_continue():
+                self.elapsed_time = self.logical_time - self.start_time
+                sample = self.generate_sample(self.elapsed_time,
+                                              self.sample_count)
+                self.outlet.push_sample(sample, timestamp=self.logical_time)
                 if self.debug and (nominal_srate <= 5
-                                   or (sample_count % nominal_srate) == 0):
-                    self.print(self.name, now, logical_time, elapsed_time,
-                               content_type, sample)
-                sample_count = sample_count + 1
-                self.check_continue(elapsed_time, sample_count, self.max_time,
-                                    self.max_samples)
-                logical_time = logical_time + delta
+                                   or (self.sample_count % nominal_srate) == 0):
+                    self.print(self.name, local_clock(), self.logical_time,
+                               self.elapsed_time, content_type, sample)
+                self.sample_count = self.sample_count + 1
+                self.logical_time = self.logical_time + delta
                 # Avoid drift.
-                delay = logical_time - local_clock()
+                delay = self.logical_time - (local_clock() + self.latency)
                 if delay > 0:
                     time.sleep(delay)
-                else:
-                    print(f'LATE: {self.name} {delay:.6f} try increasing latency!')
+                elif (delay + self.latency) < 0:
+                    print(f'LATE: {self.name} {delay + self.latency:.6f} try increasing latency!')
         except Exception as exc:
             self.stop()
             raise exc
@@ -108,17 +134,45 @@ class TestStream (DataStream):
             self.stop()
         print(f'Ended: {self.name}.')
 
-    def check_continue(self, elapsed_time, sample_count, max_time,
-                       max_samples):
-        if not self.is_stopped():
-            if max_time is not None:
-                if elapsed_time >= max_time:
-                    print(f'{self.name} max time reached.')
-                    self.stop()
-            if max_samples is not None:
-                if sample_count >= max_samples:
-                    print(f'{self.name} max samples reached.')
-                    self.stop()
+    def initialise_time(self, start_time):
+        # Generate data slightly ahead of time to give all
+        # sub-processes time to run.
+        self.start_time = start_time + self.latency
+        self.logical_time = self.start_time
+        self.elapsed_time = 0
+
+    def check_continue(self):
+        if self.is_stopped():
+            return False
+        if self.max_time is not None:
+            if self.elapsed_time >= self.max_time:
+                print(f'{self.name} max time reached.')
+                return False
+        if self.max_samples is not None:
+            if self.sample_count >= self.max_samples:
+                print(f'{self.name} max samples reached.')
+                return False
+        return True and self.check_control_state()
+
+    def check_control_state(self):
+        if self.controller is not None and (
+                # Control state has changed.
+                self.controller.state() != self.state):
+            if self.controller.state() == self.controller.states.STOP:
+                self.state = self.controller.state()
+                with self.controller.condition:
+                    # Wait for state change.
+                    self.controller.condition.wait()
+            if self.controller.state() == self.controller.states.START:
+                self.state = self.controller.state()
+                # Get synchronised start time in local timebase.
+                start_time = self.controller.timestamp()
+                #print(f'Controller time: {start_time}, local time: {local_clock()}')
+                self.initialise_time(start_time)
+                return True
+            if self.controller.state() == self.controller.states.QUIT:
+                return False
+        return True
 
     def generate_sample(self, time, sample_idx):
         sample = [self.generate_channel_data(time, sample_idx, channel_idx)

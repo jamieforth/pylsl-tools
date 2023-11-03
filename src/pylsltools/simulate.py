@@ -1,10 +1,11 @@
 """Test programme to simulate LSL streams."""
 
 import argparse
+from multiprocessing import Barrier
 
 from pylsl import local_clock
 
-from pylsltools.streams import TestStream, ControlReceiver
+from pylsltools.streams import ControlReceiver, TestStream
 
 
 class Simulate:
@@ -34,15 +35,17 @@ class Simulate:
         if control_name:
             self.controller = ControlReceiver(control_name)
 
-    def start(self, start_time=None, latency=None, max_time=None,
-              max_samples=None, chunk_size=None, max_buffered=None,
-              debug=None):
+    def start(self, sync, latency, max_time=None, max_samples=None,
+              chunk_size=None, max_buffered=None, debug=None):
         """Start test streams with a synchronised start time."""
-        if start_time is None:
+        start_time = None
+        if self.controller:
+            self.controller.start()
+        elif sync:
             # Get start time in the main thread to synchronise streams.
             start_time = local_clock()
-        if latency is not None:
-            start_time = start_time
+        # Create barrier for sub-process synchronisation.
+        self.barrier = Barrier(self.num_streams)
         streams = [TestStream(stream_idx, self.generators, self.name,
                               self.content_type, self.channel_count,
                               self.nominal_srate, self.channel_format,
@@ -56,6 +59,8 @@ class Simulate:
                               max_samples=max_samples,
                               chunk_size=chunk_size,
                               max_buffered=max_buffered,
+                              barrier=self.barrier,
+                              controller=self.controller,
                               debug=debug)
                    for stream_idx in range(self.num_streams)]
         print('Streams created.')
@@ -65,6 +70,9 @@ class Simulate:
             stream.start()
         print('Streams started.')
 
+        if self.controller:
+            # Block until controller thread returns.
+            self.controller.join()
         for stream in self.streams:
             # Block until all child processes return.
             stream.join()
@@ -75,9 +83,9 @@ class Simulate:
             if not stream.is_stopped():
                 print(f'Stopping: {stream.name}.')
                 stream.stop()
-        # for stream in self.streams:
-        #     # Block until all child processes return.
-        #     stream.join()
+        for stream in self.streams:
+            # Block until all child processes return.
+            stream.join()
 
 
 def main():
@@ -162,10 +170,15 @@ def main():
         '--control-name',
         help='Control stream name.')
     parser.add_argument(
+        '--sync',
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help='Synchronise timestamps across all streams.')
+    parser.add_argument(
         '--latency',
         type=float,
-        default=1.0,
-        help='Scheduling latency.')
+        default=0.2,
+        help='Scheduling latency in seconds.')
     parser.add_argument(
         '--debug',
         action='store_true',
@@ -178,18 +191,13 @@ def main():
                         channel_units=args.channel_unit,
                         control_name=args.control_name)
     try:
-        if simulate.controller:
-            # Block here until controller quits or keyboard interrupt.
-            simulate.controller.start()
-        else:
-            # Start streams and block until all stream processes return
-            # or keyboard interrupt.
-            simulate.start(latency=args.latency,
-                           max_time=args.max_time,
-                           max_samples=args.max_samples,
-                           chunk_size=args.chunk_size,
-                           max_buffered=args.max_buffered,
-                           debug=args.debug)
+        simulate.start(args.sync,
+                       args.latency,
+                       max_time=args.max_time,
+                       max_samples=args.max_samples,
+                       chunk_size=args.chunk_size,
+                       max_buffered=args.max_buffered,
+                       debug=args.debug)
     except Exception as exc:
         # Stop all streams if one raises an error.
         simulate.stop()
