@@ -6,6 +6,7 @@ import textwrap
 import time
 
 from pylsl import StreamOutlet, local_clock
+from pylsltools import ControlStates
 from pylsltools.streams import DataStream
 
 
@@ -19,18 +20,16 @@ class TestStream (DataStream):
     according to logical time, so even if data is sent late is should
     still be timestamped correctly.
     """
+
+    control_states = ControlStates
+
     def __init__(self, stream_idx, functions, name, content_type,
-                 channel_count, nominal_srate, channel_format, *,
+                 channel_count, nominal_srate, channel_format,
+                 recv_message_queue, send_message_queue, *,
                  source_id=None, channel_labels=None, channel_types=None,
-                 channel_units=None, start_time=None, latency=None,
-                 max_time=None, max_samples=None, chunk_size=None,
-                 max_buffered=None, barrier=None, controller=None, debug=False,
-                 **kwargs):
-        print('TestStream', stream_idx, functions, name, content_type,
-              channel_count, nominal_srate, channel_format, source_id,
-              channel_labels, channel_types, channel_units, start_time,
-              latency, max_time, max_samples, chunk_size, max_buffered,
-              debug, kwargs)
+                 channel_units=None, latency=None, max_time=None,
+                 max_samples=None, chunk_size=None, max_buffered=None,
+                 barrier=None, debug=False, **kwargs):
         if name:
             name = f'{name} test stream {stream_idx} {" ".join(g for g in functions)}'
         else:
@@ -46,65 +45,38 @@ class TestStream (DataStream):
         if source_id is None:
             source_id = f'{os.path.basename(__file__)}:{os.getpid()}'
 
-        super().__init__(name, content_type, channel_count,
-                         nominal_srate, channel_format,
-                         source_id=source_id,
+        super().__init__(name, content_type, channel_count, nominal_srate,
+                         channel_format, recv_message_queue,
+                         send_message_queue, source_id=source_id,
                          channel_labels=channel_labels,
                          channel_types=channel_types,
                          channel_units=channel_units, **kwargs)
 
-        # Store values required by functions as class attributes.
+        # Initialise values required by data generating functions.
         self.sample_count = 0
         self.elapsed_time = 0
         self.stream_idx = stream_idx
-        self.channel_count = channel_count
-        self.nominal_srate = nominal_srate
 
         # Initialise local attributes.
         self.functions = functions
-        self.start_time = start_time
+        self.start_time = None
+        self.stop_time = None
         self.latency = latency
         self.max_time = max_time
         self.max_samples = max_samples
         self.chunk_size = chunk_size
         self.max_buffered = max_buffered
         self.barrier = barrier
-        self.controller = controller
         self.debug = debug
 
     def run(self):
-        delta = 1 / self.info.nominal_srate()
-        nominal_srate = self.info.nominal_srate()
-        content_type = self.info.type()
-        self.outlet = StreamOutlet(self.info, self.chunk_size,
-                                   self.max_buffered)
-
-        # Initialise start time. If a controller is used time will be
-        # initialised later according to a start control message
-        # timestamp.
-        if self.controller is not None:
-            # Initialise current state to keep track of state changes.
-            self.state = None
-        else:
-            if not self.start_time:
-                # Non-synchronised timestamps: Use local real-time of
-                # this process.
-                self.start_time = local_clock()
-            # Initialise time values.
-            self.initialise_time(self.start_time)
-
-        # FIXME: Need to synchronise wait time over all processes.
-        # if self.wait_for_consumers:
-        #     print('Waiting for consumers.')
-        #     timeout = 1
-        #     start_delay = timeout
-        #     try:
-        #         while self.outlet.wait_for_consumers(timeout):
-        #             start_delay = start_delay + timeout
-        #     except KeyboardInterrupt:
-        #         pass
-        #     print(start_delay)
-        #     self.start_time = self.start_time + start_delay
+        delta = 1 / self.nominal_srate
+        info = self.make_stream_info(self.name, self.content_type,
+                                     self.channel_count, self.nominal_srate,
+                                     self.channel_format, self.source_id,
+                                     self.manufacturer, self.channel_labels,
+                                     self.channel_types, self.channel_units)
+        self.outlet = StreamOutlet(info, self.chunk_size, self.max_buffered)
 
         # Synchronise sub-processes before entering main loop.
         if self.barrier is not None:
@@ -116,10 +88,10 @@ class TestStream (DataStream):
                 sample = self.generate_sample(self.elapsed_time,
                                               self.sample_count)
                 self.outlet.push_sample(sample, timestamp=self.logical_time)
-                if self.debug and (nominal_srate <= 5
-                                   or (self.sample_count % nominal_srate) == 0):
+                if self.debug and (self.nominal_srate <= 5
+                                   or (self.sample_count % self.nominal_srate) == 0):
                     self.print(self.name, local_clock(), self.logical_time,
-                               self.elapsed_time, content_type, sample)
+                               self.elapsed_time, self.content_type, sample)
                 self.sample_count = self.sample_count + 1
                 self.logical_time = self.logical_time + delta
                 # Avoid drift.
@@ -128,13 +100,12 @@ class TestStream (DataStream):
                     time.sleep(delay)
                 elif (delay + self.latency) < 0:
                     print(f'LATE: {self.name} {delay + self.latency:.6f} try increasing latency!')
-        except Exception as exc:
-            self.stop()
-            raise exc
         except KeyboardInterrupt:
             print(f'Stopping: {self.name}.')
+        finally:
+            # Call stop on exiting the main loop to ensure cleanup.
             self.stop()
-        print(f'Ended: {self.name}.')
+            print(f'Ended: {self.name}.')
 
     def initialise_time(self, start_time):
         # Generate data slightly ahead of time to give all
@@ -146,35 +117,49 @@ class TestStream (DataStream):
     def check_continue(self):
         if self.is_stopped():
             return False
+        if self.stop_time is not None:
+            if self.logical_time >= self.stop_time:
+                if self.debug:
+                    print('Synchronised stop time.')
+                self.start_time = None
+                self.stop_time = None
         if self.max_time is not None:
             if self.elapsed_time >= self.max_time:
-                print(f'{self.name} max time reached.')
+                if self.debug:
+                    print(f'{self.name} max time reached.')
                 return False
         if self.max_samples is not None:
             if self.sample_count >= self.max_samples:
-                print(f'{self.name} max samples reached.')
+                if self.debug:
+                    print(f'{self.name} max samples reached.')
                 return False
         return True and self.check_control_state()
 
     def check_control_state(self):
-        if self.controller is not None and (
-                # Control state has changed.
-                self.controller.state() != self.state):
-            if self.controller.state() == self.controller.states.STOP:
-                self.state = self.controller.state()
-                with self.controller.condition:
-                    # Wait for state change.
-                    self.controller.condition.wait()
-            if self.controller.state() == self.controller.states.START:
-                self.state = self.controller.state()
-                # Get synchronised start time in local timebase.
-                start_time = self.controller.timestamp()
-                #print(f'Controller time: {start_time}, local time: {local_clock()}')
-                self.initialise_time(start_time)
+        if self.start_time and self.recv_message_queue.empty():
+            return True
+        else:
+            if self.debug:
+                print(f'{self.name}: waiting for or handling a message')
+            # This is blocking.
+            message = self.recv_message_queue.get()
+            if self.debug:
+                print(f'{self.name} received message: {message}, local_clock: {local_clock()}')
+            # All time-stamps are in the local timebase.
+            if message['state'] == self.control_states.PAUSE:
+                self.stop_time = message['time_stamp']
                 return True
-            if self.controller.state() == self.controller.states.QUIT:
-                return False
-        return True
+            if message['state'] == self.control_states.START:
+                self.start_time = message['time_stamp']
+                if not self.start_time:
+                    # Non-synchronised timestamps: Use local real-time of
+                    # this process.
+                    self.start_time = local_clock()
+                # Initialise time values.
+                self.initialise_time(self.start_time)
+                return True
+            if message['state'] == self.control_states.STOP:
+                self.stop_time = message['time_stamp']
 
     def generate_sample(self, time, sample_idx):
         sample = [self.generate_channel_data(time, sample_idx, channel_idx)

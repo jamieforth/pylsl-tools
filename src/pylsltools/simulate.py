@@ -1,15 +1,13 @@
 """Test programme to simulate LSL streams."""
 
 import argparse
-import sys
-if 'linux' in sys.platform:
-    from multiprocessing import Barrier
-elif 'win32' in sys.platform:
-    from threading import Barrier
-
+import asyncio
+import multiprocessing as mp
+import threading
 
 from pylsl import local_clock
 
+from pylsltools import ControlStates
 from pylsltools.streams import ControlReceiver, TestStream
 
 
@@ -17,15 +15,21 @@ class Simulate:
     """Generate test synthetic data streams."""
 
     controller = None
+    control_states = ControlStates
 
     def __init__(self, num_streams, functions, name, content_type,
                  channel_count, nominal_srate, channel_format, source_id,
                  channel_labels=None, channel_types=None, channel_units=None,
-                 control_name=None):
+                 control_name=None, debug=False):
         """Initialise simulation test.
 
-        Optionally set up an input control stream.
+        Optionally can receive messages from an input LSL control
+        stream.
         """
+        # Event to terminate the main process.
+        self.stop_event = threading.Event()
+
+        # Set class attributes.
         self.num_streams = num_streams
         self.functions = functions
         self.name = name
@@ -37,20 +41,25 @@ class Simulate:
         self.channel_labels = channel_labels
         self.channel_types = channel_types
         self.channel_units = channel_units
+        # Create barrier for sub-process synchronisation.
+        self.barrier = mp.Barrier(self.num_streams)
+        # For receiving messages from sub-processes.
+        self.recv_message_queue = mp.SimpleQueue()
+        # For receiving messages from a controller thread.
         if control_name:
-            self.controller = ControlReceiver(control_name)
+            self.controller = ControlReceiver(control_name,
+                                              debug=debug)
+        self.debug = debug
 
     def start(self, sync, latency, max_time=None, max_samples=None,
-              chunk_size=None, max_buffered=None, debug=None):
+              chunk_size=None, max_buffered=None):
         """Start test streams with a synchronised start time."""
-        start_time = None
+
+        # Start remote control thread if initialised.
         if self.controller:
             self.controller.start()
-        elif sync:
-            # Get start time in the main thread to synchronise streams.
-            start_time = local_clock()
-        # Create barrier for sub-process synchronisation.
-        self.barrier = Barrier(self.num_streams)
+
+        # Create sub-processes.
         streams = [TestStream(stream_idx, self.functions, self.name,
                               self.content_type, self.channel_count,
                               self.nominal_srate, self.channel_format,
@@ -58,43 +67,119 @@ class Simulate:
                               channel_labels=self.channel_labels,
                               channel_types=self.channel_types,
                               channel_units=self.channel_units,
-                              start_time=start_time,
                               latency=latency,
                               max_time=max_time,
                               max_samples=max_samples,
                               chunk_size=chunk_size,
                               max_buffered=max_buffered,
                               barrier=self.barrier,
-                              controller=self.controller,
-                              debug=debug)
+                              # Each sub-process has a unique
+                              # recv_message queue.
+                              recv_message_queue=mp.SimpleQueue(),
+                              # Each sub-process shares the same queue
+                              # for sending message to the main process.
+                              send_message_queue=self.recv_message_queue,
+                              debug=self.debug)
                    for stream_idx in range(self.num_streams)]
-        print('Streams created.')
+
         self.streams = streams
 
         for stream in self.streams:
+            # Start sub-processes.
             stream.start()
-        print('Streams started.')
+
+        # Initialise start time.
+        if not self.controller:
+            if sync:
+                # Get start time in the main thread to synchronise streams.
+                start_time = local_clock()
+            else:
+                start_time = None
+            self.send_message_to_streams({'state': self.control_states.START,
+                                          'time_stamp': start_time})
+
+        # Use asyncio to handle asynchronous messages in the main thread.
+        with asyncio.Runner() as runner:
+            # Block here until runner returns.
+            runner.run(self.handle_messages())
+
+        for stream in self.streams:
+            # Block until all child processes return.
+            stream.join()
 
         if self.controller:
-            # Block until controller thread returns.
             self.controller.join()
+
+    async def handle_messages(self):
+        try:
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(self.recv_from_streams())
+                if self.controller:
+                    tg.create_task(self.recv_from_controller())
+        finally:
+            print('End handle messages.')
+
+    def send_message_to_streams(self, message):
         for stream in self.streams:
-            # Block until all child processes return.
-            stream.join()
+            if stream.is_alive():
+                stream.recv_message_queue.put(message)
+
+    async def recv_from_streams(self):
+        """Coroutine to handle messages from sub-processes."""
+        try:
+            while not self.streams_stopped(self.streams):
+                # Block here until message received.
+                message = await asyncio.to_thread(self.recv_message_queue.get)
+                if self.debug and message:
+                    print(f'{__class__} sub-process message: {message}')
+        finally:
+            if self.debug:
+                print('End stream messaging.')
+            self.stop()
+
+    async def recv_from_controller(self):
+        """Coroutine to handle controller messages."""
+        try:
+            while not (self.controller.is_stopped()):
+                # Loop here waiting for messages.
+                # Blocking.
+                message = await asyncio.to_thread(self.controller.get_message)
+                if self.debug and message:
+                    print(f'{self.__class__} controller message: {message}')
+                if message:
+                    self.send_message_to_streams(message)
+        finally:
+            if self.debug:
+                print('End controller messaging.')
+            self.stop()
+
+    def streams_stopped(self, streams):
+        for stream in streams:
+            if not stream.is_stopped():
+                return False
+        return True
 
     def stop(self):
-        """Stop all stream processes."""
+        if not self.is_stopped():
+            self.stop_event.set()
+        # # Stop all stream processes.
         for stream in self.streams:
             if not stream.is_stopped():
-                print(f'Stopping: {stream.name}.')
                 stream.stop()
         for stream in self.streams:
-            # Block until all child processes return.
             stream.join()
+        if self.controller and not self.controller.is_stopped():
+            self.controller.stop()
+            self.controller.join()
 
+    def is_stopped(self):
+        return self.stop_event.is_set()
 
 def main():
     """Generate synthetic LSL streams."""
+    import multiprocessing
+    multiprocessing.set_start_method('spawn')
+
     parser = argparse.ArgumentParser(description="""Create test LSL data
     streams using synthetic data.""")
     parser.add_argument(
@@ -194,15 +279,15 @@ def main():
                         args.channel_format, args.source_id,
                         channel_types=args.channel_type,
                         channel_units=args.channel_unit,
-                        control_name=args.control_name)
+                        control_name=args.control_name,
+                        debug=args.debug)
     try:
         simulate.start(args.sync,
                        args.latency,
                        max_time=args.max_time,
                        max_samples=args.max_samples,
                        chunk_size=args.chunk_size,
-                       max_buffered=args.max_buffered,
-                       debug=args.debug)
+                       max_buffered=args.max_buffered)
     except Exception as exc:
         # Stop all streams if one raises an error.
         simulate.stop()
@@ -210,4 +295,5 @@ def main():
     except KeyboardInterrupt:
         print('Stopping main.')
         simulate.stop()
-    print('Main exit.')
+    finally:
+        print('Main exit.')

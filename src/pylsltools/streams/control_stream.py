@@ -1,63 +1,56 @@
-
 import json
 import platform
+import queue
 import time
-from enum import IntEnum, auto
-from multiprocessing import Condition, Value
 
 from pylsl import (LostError, StreamInlet, StreamOutlet, local_clock, proc_ALL,
                    resolve_bypred)
+from pylsltools import ControlStates
 from pylsltools.streams import MarkerStreamThread
-
-
-class States(IntEnum):
-    STOP = auto()
-    START = auto()
-    QUIT = auto()
 
 
 class ControlSender(MarkerStreamThread):
     """Control stream sending thread."""
 
-    states = States
+    control_states = ControlStates
 
-    def __init__(self, name, *, content_type='control', source_id=None,
-                 latency=0.5, manufacturer='pylsltools', debug=False,
+    def __init__(self, name, latency=0.5, *, content_type='control',
+                 source_id=None, manufacturer='pylsltools', debug=False,
                  **kwargs):
 
-        # Use host name to identify source. If stream is interrupted due
-        # to network outage or the controller is restarted receivers
-        # should be able to recover.
+        # Use host name to identify source if unspecified. If stream is
+        # interrupted due to network outage or the controller is
+        # restarted receivers should be able to recover.
         if not source_id:
             source_id = platform.node()
 
-        info = self.make_stream_info(name, content_type, source_id,
-                                     manufacturer)
-
-        super().__init__(info, **kwargs)
+        super().__init__(name, content_type, source_id=source_id,
+                         manufacturer=manufacturer, **kwargs)
 
         # Set class attributes.
-        self.name = name
         self.latency = latency
         self.debug = debug
 
     def run(self):
-        self.outlet = StreamOutlet(self.info, chunk_size=1)
+        info = self.make_stream_info(self.name, self.content_type,
+                                     self.source_id, self.manufacturer)
+
+        self.outlet = StreamOutlet(info, chunk_size=1)
         try:
             while not self.is_stopped():
-                cmd = input('Enter a command: start, stop, quit.\n')
-                if cmd == 'stop':
+                state = input('Enter a command: start, pause, stop.\n')
+                if state == 'start':
                     self.outlet.push_sample([json.dumps(
-                        {'cmd': self.states.STOP}
+                        {'state': self.control_states.START}
                     )], local_clock() + self.latency)
-                elif cmd == 'start':
+                elif state == 'pause':
                     self.outlet.push_sample([json.dumps(
-                        {'cmd': self.states.START}
+                        {'state': self.control_states.PAUSE}
                     )], local_clock() + self.latency)
-                elif cmd == 'quit':
+                elif state == 'stop':
                     self.stop()
                 else:
-                    print(f'Undefined command: {cmd}')
+                    print(f'Undefined command: {state}')
         except Exception as exc:
             self.stop()
             raise exc
@@ -65,78 +58,82 @@ class ControlSender(MarkerStreamThread):
 
     def stop(self):
         super().stop()
-        # Send quit command here in case main thread called stop or
+        # Send stop command here in case main thread called stop or
         # exception raised.
         self.outlet.push_sample([json.dumps(
-            {'cmd': self.states.QUIT}
+            {'state': self.control_states.STOP}
         )], local_clock() + self.latency)
         # Pause thread before destroying outlet to try and avoid any
         # receivers throwing a LostError before receiving the quit
         # message. Not that it really matters as receivers will
-        # gracefully quit when a stream disconnects - but is there a
-        # better way to handle this by waiting for any pending messages
-        # to be sent?
+        # gracefully quit when a stream disconnects - but in general is
+        # there a better way to handle waiting for any pending messages
+        # to be sent before an outlet is destroyed?
         time.sleep(1)
 
 
 class ControlReceiver(MarkerStreamThread):
     """Control stream receiver thread."""
 
-    states = States
+    control_states = ControlStates
+    inlet = None
 
-    def __init__(self, name, debug=False, **kwargs):
-        super().__init__(None, **kwargs)
+    def __init__(self, name, *, content_type='control',
+                 debug=False, **kwargs):
+        super().__init__(name, content_type, **kwargs)
 
         # Set class attributes.
-        self.name = name
-        self.__timestamp = Value('f', 0.0)
-        self.__state = Value('i', self.states.STOP)
-        self.condition = Condition()
+        self.time_stamp = 0.0
+        self.state = self.control_states.STOP
+        self.send_message_queue = queue.SimpleQueue()
         self.debug = debug
 
     def run(self):
         print('Waiting for control stream.')
-        sender_info = resolve_bypred(f"name='{self.name}'")[0]
-        self.set_info(sender_info)
+        sender_info = None
+        while not sender_info and not self.is_stopped():
+            sender_info = resolve_bypred(f"name='{self.name}'", timeout=0.5)
+        if not sender_info:
+            return
+        sender_info = sender_info[0]
 
-        inlet = StreamInlet(self.info, max_buflen=1, max_chunklen=1,
-                            recover=False, processing_flags=proc_ALL)
+        print(f'Found control stream: {sender_info.name()}.')
+
+        self.inlet = StreamInlet(sender_info, max_buflen=1, max_chunklen=1,
+                                 recover=False, processing_flags=proc_ALL)
+        message = None
         try:
             while not self.is_stopped():
-                try:
-                    message, timestamp = inlet.pull_sample()
-                    print(f'Control {self.name}, timestamp: {timestamp}, message: {message}')
-                except LostError as exc:
-                    self.stop()
-                    print(f'{self.name}: {exc}')
-                    return
-                # Handle message.
-                message = self.parse_message(message)
+                # Blocking. No timeout needed because we can close the
+                # inlet on stop.
+                message, time_stamp = self.inlet.pull_sample()
+                print(f'Control {self.name}, time_stamp: {time_stamp}, message: {message}')
                 if message:
+                    # Handle message.
+                    message = self.parse_message(message, time_stamp)
                     # Only notify on state changes.
-                    if message['cmd'] != self.state():
-                        # Update shared memory and notify all waiting
-                        # processes.
-                        self.__timestamp.value = timestamp
-                        self.__state.value = message['cmd']
-                        with self.condition:
-                            self.condition.notify_all()
-                        if self.state() == self.states.QUIT:
+                    if message['state'] != self.state:
+                        # Update current state.
+                        self.state = message['state']
+                        self.time_stamp = time_stamp
+                        self.send_message_queue.put(message)
+                        # When STOP stop this thread.
+                        if message['state'] == self.control_states.STOP:
                             self.stop()
-        except Exception as exc:
+        except LostError as exc:
+            print(f'{self.name}: {exc}')
+        finally:
             self.stop()
-            raise exc
+            print(f'Ended: {self.name}.')
 
-    def stop(self):
-        super().stop()
-        # Ensure all processes are notified even if this thread exists
-        # not in response to receiving a quit command.
-        self.__state.value = self.states.QUIT
-        with self.condition:
-            self.condition.notify_all()
+    def cleanup(self):
+        print('Controller cleanup')
+        if isinstance(self.inlet, StreamInlet):
+            self.inlet.close_stream()
 
-    def timestamp(self):
-        return self.__timestamp.value
-
-    def state(self):
-        return self.__state.value
+    def get_message(self, timeout=None):
+        try:
+            message = self.send_message_queue.get(timeout=timeout)
+            return message
+        except queue.Empty:
+            pass
