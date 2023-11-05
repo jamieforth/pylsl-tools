@@ -3,6 +3,7 @@
 import json
 import multiprocessing
 import threading
+import time
 from multiprocessing import Process
 from threading import Thread
 
@@ -11,6 +12,9 @@ from pylsl import IRREGULAR_RATE, StreamInfo
 
 class BaseStream():
     """Base stream initialised from an LSL info object."""
+
+    # Event to terminate the stream.
+    stop_event = None
 
     def __init__(self, name, content_type, channel_count, nominal_srate,
                  channel_format, *, source_id, manufacturer, **kwargs):
@@ -24,8 +28,31 @@ class BaseStream():
         self.source_id = source_id
         self.manufacturer = manufacturer
 
+    def is_stopped(self):
+        if self.stop_event:
+            return self.stop_event.is_set()
+        else:
+            print(f'{__class__} not running in own thread/process.')
+            return True
+
+    def stop(self):
+        if not self.is_stopped():
+            self.stop_event.set()
+            if self.send_message_queue:
+                # Unblock any waiting threads.
+                self.send_message_queue.put('')
+            # Pause thread before destroying outlet to try and avoid any
+            # receivers throwing a LostError before receiving the quit
+            # message. Not that it really matters as receivers will
+            # gracefully quit when a stream disconnects - but in general is
+            # there a better way to handle waiting for any pending messages
+            # to be sent before an outlet is destroyed?
+            time.sleep(0.5)
+            self.cleanup()
+
     def cleanup(self):
         pass
+
 
 class DataStream(BaseStream, Process):
     """Data stream that runs in a separate process."""
@@ -51,17 +78,6 @@ class DataStream(BaseStream, Process):
 
     def run(self):
         pass
-
-    def stop(self):
-        if not self.is_stopped():
-            self.stop_event.set()
-            if self.send_message_queue:
-                # Unblock any waiting threads.
-                self.send_message_queue.put(f'Stream {self.name} stopped.')
-            self.cleanup()
-
-    def is_stopped(self):
-        return self.stop_event.is_set()
 
     def make_stream_info(self, name, content_type, channel_count,
                          nominal_srate, channel_format, source_id,
@@ -187,19 +203,8 @@ class MarkerStreamThread(BaseMarkerStream, Thread):
         super().__init__(name, content_type, source_id=source_id,
                          manufacturer=manufacturer, **kwargs)
 
-        # Event to terminate the process.
+        # Event to terminate the thread.
         self.stop_event = threading.Event()
 
     def run(self):
         pass
-
-    def stop(self):
-        if not self.is_stopped():
-            self.stop_event.set()
-            if self.send_message_queue:
-                # Unblock any waiting threads.
-                self.send_message_queue.put('')
-            self.cleanup()
-
-    def is_stopped(self):
-        return self.stop_event.is_set()

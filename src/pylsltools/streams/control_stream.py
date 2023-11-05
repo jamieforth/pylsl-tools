@@ -57,19 +57,12 @@ class ControlSender(MarkerStreamThread):
         print(f'Ended: {self.name}.')
 
     def stop(self):
-        super().stop()
         # Send stop command here in case main thread called stop or
         # exception raised.
         self.outlet.push_sample([json.dumps(
             {'state': self.control_states.STOP}
         )], local_clock() + self.latency)
-        # Pause thread before destroying outlet to try and avoid any
-        # receivers throwing a LostError before receiving the quit
-        # message. Not that it really matters as receivers will
-        # gracefully quit when a stream disconnects - but in general is
-        # there a better way to handle waiting for any pending messages
-        # to be sent before an outlet is destroyed?
-        time.sleep(1)
+        super().stop()
 
 
 class ControlReceiver(MarkerStreamThread):

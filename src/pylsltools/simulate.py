@@ -127,7 +127,8 @@ class Simulate:
     async def recv_from_streams(self):
         """Coroutine to handle messages from sub-processes."""
         try:
-            while not self.streams_stopped(self.streams):
+            while not self.streams_stopped(self.streams) or (
+                    not self.recv_message_queue.empty()):
                 # Block here until message received.
                 message = await asyncio.to_thread(self.recv_message_queue.get)
                 if self.debug and message:
@@ -140,7 +141,8 @@ class Simulate:
     async def recv_from_controller(self):
         """Coroutine to handle controller messages."""
         try:
-            while not (self.controller.is_stopped()):
+            while not self.controller.is_stopped() or (
+                    not self.controller.send_message_queue.empty()):
                 # Loop here waiting for messages.
                 # Blocking.
                 message = await asyncio.to_thread(self.controller.get_message)
