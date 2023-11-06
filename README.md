@@ -20,6 +20,9 @@ pipenv install
 pipenv install --categories "packages xdf dev-packages"
 ```
 
+The full install includes the [pyxdf-tools](https://github.com/jamieforth/pyxdf-tools/tree/main)
+package for parsing `xdf` files (e.g. for creating mock streams).
+
 ## Usage
 ### lsl-simulate
 
