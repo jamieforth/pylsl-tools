@@ -3,8 +3,8 @@
 For receiving monitoring information from relay streams.
 """
 
+import os
 import json
-import platform
 
 from pylsl import LostError, StreamInlet, StreamOutlet, resolve_bypred
 from pylsltools.streams import BaseMarkerStream, MarkerStreamThread
@@ -20,7 +20,7 @@ class MonitorSender(BaseMarkerStream):
                  manufacturer='pylsltools', debug=False, **kwargs):
 
         if not source_id:
-            source_id = platform.node()
+            source_id = f'{os.path.basename(__file__)}:{os.getpid()}'
 
         super().__init__(name, content_type, source_id=source_id,
                          manufacturer=manufacturer, **kwargs)

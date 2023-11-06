@@ -5,6 +5,7 @@ control. Useful for re-encoding a local stream to fix broken client
 timestamps before relaying across the network.
 """
 
+import os
 import textwrap
 
 from pylsl import (LostError, StreamInlet, StreamOutlet, local_clock,
@@ -25,16 +26,20 @@ class RelayStream(DataStream):
                  recv_message_queue=None, send_message_queue=None, debug=False,
                  **kwargs):
 
-        relay_name = '_relay_' + name
+        sender_name = name
+        name = '_relay_' + name
+        sender_source_id = source_id
+        source_id = f'_relay_{source_id}:{os.getpid()}'
 
-        super().__init__(relay_name, content_type, channel_count,
-                         nominal_srate, channel_format, source_id=source_id,
+        super().__init__(name, content_type, channel_count, nominal_srate,
+                         channel_format, source_id=source_id,
                          recv_message_queue=recv_message_queue,
                          send_message_queue=send_message_queue)
 
         # Initialise local attributes.
-        self.sender_name = name
+        self.sender_name = sender_name
         self.sender_hostname = hostname
+        self.sender_source_id = sender_source_id
         self.re_encode_timestamps = re_encode_timestamps
         self.output = output
         self.monitor = monitor
@@ -68,14 +73,14 @@ class RelayStream(DataStream):
         # throw a LostError. Recover=False will end this process and
         # delegate restarting to the continuous resolver if the stream
         # comes back online. Which is best? Handing control back to the
-        # continuous resolver at least allows for a graceful exit.
+        # continuous resolver at least allows for a graceful
+        # exit. Alternatively, set a timeout on pull_sample and return
+        # after a period of waiting to see if the stream reconnects.
         inlet = StreamInlet(sender_info,
                             max_buflen=self.max_buffered,
                             max_chunklen=self.chunk_size,
                             recover=False,
                             processing_flags=0)
-
-        source_id = '_relay_' + inlet.info().source_id()
 
         if self.output:
             # FIXME: Append desc custom metadata.
@@ -84,7 +89,7 @@ class RelayStream(DataStream):
                                          self.channel_count,
                                          self.nominal_srate,
                                          self.channel_format,
-                                         source_id=source_id)
+                                         source_id=self.source_id)
             outlet = StreamOutlet(info, self.chunk_size, self.max_buffered)
 
         if self.monitor:
@@ -95,6 +100,7 @@ class RelayStream(DataStream):
 
         try:
             # TODO: Integrate control states!
+            # Could use this to pre-process/reduce data being relayed.
             while not self.is_stopped():
                 sample, timestamp = inlet.pull_sample()
                 now = local_clock()
