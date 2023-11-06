@@ -83,6 +83,7 @@ class TestStream (DataStream):
                                      channel_types=self.channel_types,
                                      channel_units=self.channel_units)
         self.outlet = StreamOutlet(info, self.chunk_size, self.max_buffered)
+        outlet = StreamOutlet(info, self.chunk_size, self.max_buffered)
 
         # Synchronise sub-processes before entering main loop.
         if self.barrier is not None:
@@ -93,7 +94,7 @@ class TestStream (DataStream):
                 self.elapsed_time = self.logical_time - self.start_time
                 sample = self.generate_sample(self.elapsed_time,
                                               self.sample_count)
-                self.outlet.push_sample(sample, timestamp=self.logical_time)
+                outlet.push_sample(sample, timestamp=self.logical_time)
                 if self.debug and (self.nominal_srate <= 5
                                    or (self.sample_count % self.nominal_srate) == 0):
                     self.print(self.name, local_clock(), self.logical_time,
