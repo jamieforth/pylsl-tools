@@ -88,12 +88,12 @@ lsl-relay --debug
 
 ```
 # Run with Ant Server.
-lsl-relay --keep-orig-timestamps --monitor
+lsl-relay
 ```
 
 ```
 # Run with Ant EEGO App.
-lsl-relay --monitor
+lsl-relay --re-encode-timestamps
 ```
 
 See `lsl-relay --help` for all options.
