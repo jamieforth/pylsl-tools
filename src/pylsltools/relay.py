@@ -44,12 +44,9 @@ class Relay:
             self.controller.start()
 
         # TODO: Wrap this in a class or co-routine.
-        resolver = ContinuousResolver(pred=self.pred, forget_after=1)
-        self.thread = Thread(target=self.run, args=[resolver, chunk_size,
-                                                    max_buffered,
+        self.thread = Thread(target=self.run, args=[chunk_size, max_buffered,
                                                     re_encode_timestamps,
-                                                    output,
-                                                    monitor,
+                                                    output, monitor,
                                                     monitor_interval])
         self.thread.start()
 
@@ -66,8 +63,10 @@ class Relay:
         self.thread.join()
 
 
-    def run(self, resolver, chunk_size, max_buffered, re_encode_timestamps,
-            output, monitor, monitor_interval):
+    def run(self, chunk_size, max_buffered, re_encode_timestamps, output,
+            monitor, monitor_interval):
+
+        resolver = ContinuousResolver(pred=self.pred, forget_after=1)
 
         while not self.is_stopped():
             # FIXME: Improve this? Continuous resolver always returns a
@@ -157,6 +156,8 @@ class Relay:
     def stop(self):
         if not self.is_stopped():
             self.stop_event.set()
+        # Unblock messaging thread.
+        self.recv_message_queue.put('')
         # Stop all stream processes.
         for stream in self.active_streams.values():
             if not stream.is_stopped():
