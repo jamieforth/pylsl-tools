@@ -15,6 +15,11 @@ cd pylsl-tools
 pipenv install
 ```
 
+```
+# Optionall install additional dependencies.
+pipenv install --categories "packages xdf dev-packages"
+```
+
 ## Usage
 ### lsl-simulate
 
