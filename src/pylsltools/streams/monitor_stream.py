@@ -68,6 +68,9 @@ class MonitorReceiver(MarkerStreamThread):
 
         inlet = StreamInlet(sender_info, max_buflen=1, max_chunklen=1,
                             recover=False)
+        if self.debug:
+            print(inlet.info().as_xml())
+
         try:
             while not self.is_stopped():
                 message, timestamp = inlet.pull_sample()
