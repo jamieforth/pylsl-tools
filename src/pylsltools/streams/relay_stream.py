@@ -19,15 +19,16 @@ class RelayStream(DataStream):
     control_states = ControlStates
 
     def __init__(self, name, content_type, channel_count, nominal_srate,
-                 channel_format, hostname, *, re_encode_timestamps=False,
-                 output=True, monitor=True, monitor_interval=5, chunk_size=1,
-                 max_buffered=360, recv_message_queue=None,
-                 send_message_queue=None, debug=False, **kwargs):
+                 channel_format, source_id, hostname, *,
+                 re_encode_timestamps=False, output=True, monitor=True,
+                 monitor_interval=5, chunk_size=1, max_buffered=360,
+                 recv_message_queue=None, send_message_queue=None, debug=False,
+                 **kwargs):
 
         relay_name = '_relay_' + name
 
         super().__init__(relay_name, content_type, channel_count,
-                         nominal_srate, channel_format,
+                         nominal_srate, channel_format, source_id=source_id,
                          recv_message_queue=recv_message_queue,
                          send_message_queue=send_message_queue)
 

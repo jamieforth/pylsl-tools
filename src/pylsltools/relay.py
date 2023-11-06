@@ -83,6 +83,7 @@ class Relay:
                         stream.channel_count(),
                         stream.nominal_srate(),
                         stream.channel_format(),
+                        stream.source_id(),
                         stream.hostname(),
                         re_encode_timestamps=re_encode_timestamps,
                         output=output,
@@ -182,6 +183,7 @@ class Relay:
             stream.name(),
             stream.type(),
             str(stream.channel_count()),
+            stream.source_id(),
             stream.hostname()])
         return key
 
