@@ -45,14 +45,14 @@ class Simulate:
         self.barrier = mp.Barrier(self.num_streams)
         # For receiving messages from sub-processes.
         self.recv_message_queue = mp.SimpleQueue()
-        # For receiving messages from a controller thread.
+        # For receiving messages from a controller stream.
         if control_name:
             self.controller = ControlReceiver(control_name,
                                               debug=debug)
         self.debug = debug
 
-    def start(self, sync, latency, max_time=None, max_samples=None,
-              chunk_size=None, max_buffered=None):
+    def start(self, sync, latency, max_time, max_samples, chunk_size,
+              max_buffered):
         """Start test streams with a synchronised start time."""
 
         # Start remote control thread if initialised.
@@ -72,13 +72,13 @@ class Simulate:
                               max_samples=max_samples,
                               chunk_size=chunk_size,
                               max_buffered=max_buffered,
-                              barrier=self.barrier,
                               # Each sub-process has a unique
                               # recv_message queue.
                               recv_message_queue=mp.SimpleQueue(),
                               # Each sub-process shares the same queue
                               # for sending message to the main process.
                               send_message_queue=self.recv_message_queue,
+                              barrier=self.barrier,
                               debug=self.debug)
                    for stream_idx in range(self.num_streams)]
 
@@ -108,6 +108,7 @@ class Simulate:
             stream.join()
 
         if self.controller:
+            # Block until controller returns.
             self.controller.join()
 
     async def handle_messages(self):
@@ -164,7 +165,7 @@ class Simulate:
     def stop(self):
         if not self.is_stopped():
             self.stop_event.set()
-        # # Stop all stream processes.
+        # Stop all stream processes.
         for stream in self.streams:
             if not stream.is_stopped():
                 stream.stop()
@@ -226,6 +227,7 @@ def main():
         help='Channel datatype.')
     parser.add_argument(
         '--source-id',
+        default='',
         help='Unique identifier for stream source.')
     parser.add_argument(
         '-t',
@@ -238,12 +240,10 @@ def main():
     parser.add_argument(
         '--max-time',
         type=float,
-        default=None,
         help='Maximum run-time for test streams.')
     parser.add_argument(
         '--max-samples',
         type=int,
-        default=None,
         help="""Maximum number of samples to generate by each test
         stream.""")
     parser.add_argument(

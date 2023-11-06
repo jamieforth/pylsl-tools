@@ -1,6 +1,5 @@
 """Script to monitor data streams over LSL."""
 
-import os
 import argparse
 from threading import Event, Thread
 from time import sleep
@@ -34,10 +33,13 @@ class Monitor:
             for stream in streams:
                 stream_key = self.make_stream_key(stream)
                 if stream_key not in self.active_streams.keys():
-                    new_stream = MonitorReceiver(stream, debug)
+                    new_stream = MonitorReceiver(stream.name(),
+                                                 stream.type(),
+                                                 stream.hostname(),
+                                                 debug)
                     self.active_streams[stream_key] = new_stream
                     new_stream.start()
-                    print(f'New stream added {new_stream.info.name()}.')
+                    print(f'New stream added {stream.name()}.')
             self.cleanup()
             sleep(1)
 

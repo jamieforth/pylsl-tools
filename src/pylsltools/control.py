@@ -19,6 +19,7 @@ def main():
         help='Content type for marker stream.')
     parser.add_argument(
         '--source-id',
+        default='',
         help='Unique identifier for stream source.')
     parser.add_argument(
         '--latency',

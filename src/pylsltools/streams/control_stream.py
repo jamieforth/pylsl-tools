@@ -15,7 +15,7 @@ class ControlSender(MarkerStreamThread):
     control_states = ControlStates
 
     def __init__(self, name, latency=0.5, *, content_type='control',
-                 source_id=None, manufacturer='pylsltools', debug=False,
+                 source_id='', manufacturer='pylsltools', debug=False,
                  **kwargs):
 
         # Use host name to identify source if unspecified. If stream is
@@ -94,7 +94,6 @@ class ControlReceiver(MarkerStreamThread):
 
         self.inlet = StreamInlet(sender_info, max_buflen=1, max_chunklen=1,
                                  recover=False, processing_flags=proc_ALL)
-        message = None
         try:
             while not self.is_stopped():
                 # Blocking. No timeout needed because we can close the

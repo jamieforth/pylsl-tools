@@ -11,16 +11,12 @@ from pylsl import IRREGULAR_RATE, StreamInfo
 
 
 class BaseStream():
-    """Base stream initialised from an LSL info object."""
-
-    # Event to terminate the stream.
-    stop_event = None
+    """Base stream initialised with LSL properties."""
 
     def __init__(self, name, content_type, channel_count, nominal_srate,
-                 channel_format, *, source_id, manufacturer, **kwargs):
-        super().__init__(name=name, **kwargs)
-
+                 channel_format, source_id, manufacturer):
         # Set class attributes.
+        self.name = name
         self.content_type = content_type
         self.channel_count = channel_count
         self.nominal_srate = nominal_srate
@@ -28,12 +24,26 @@ class BaseStream():
         self.source_id = source_id
         self.manufacturer = manufacturer
 
+
+class BaseStreamThread(Thread, BaseStream):
+
+    # Event to terminate the thread.
+    stop_event = None
+
+    # Queue to send messages to parent thread.
+    send_message_queue = None
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # Event to terminate the thread.
+        self.stop_event = threading.Event()
+
     def is_stopped(self):
-        if self.stop_event:
-            return self.stop_event.is_set()
-        else:
-            print(f'{__class__} not running in own thread/process.')
-            return True
+        return self.stop_event.is_set()
+
+    def run(self):
+        pass
 
     def stop(self):
         if not self.is_stopped():
@@ -54,21 +64,67 @@ class BaseStream():
         pass
 
 
-class DataStream(BaseStream, Process):
-    """Data stream that runs in a separate process."""
+class BaseStreamProcess(Process, BaseStream):
 
-    def __init__(self, name, content_type, channel_count, nominal_srate,
-                 channel_format, recv_message_queue, send_message_queue, *,
-                 source_id=None, manufacturer='pylsltools',
-                 channel_labels=None, channel_types=None, channel_units=None,
-                 **kwargs):
-        super().__init__(name, content_type, channel_count, nominal_srate,
-                         channel_format, source_id=source_id,
-                         manufacturer=manufacturer, **kwargs)
+    # Event to terminate the process.
+    stop_event = None
+
+    # Queue to receive messages from parent thread.
+    recv_message_queue = None
+
+    # Queue to send messages to parent thread.
+    send_message_queue = None
+
+    def __init__(self, recv_message_queue, send_message_queue, **kwargs):
+        super().__init__(**kwargs)
+
+        # Event to terminate the thread.
+        self.stop_event = multiprocessing.Event()
 
         # Set class attributes.
         self.recv_message_queue = recv_message_queue
         self.send_message_queue = send_message_queue
+
+    def is_stopped(self):
+        return self.stop_event.is_set()
+
+    def run(self):
+        pass
+
+    def stop(self):
+        if not self.is_stopped():
+            self.stop_event.set()
+            if self.send_message_queue:
+                # Unblock any waiting threads.
+                self.send_message_queue.put('')
+            # Pause thread before destroying outlet to try and avoid any
+            # receivers throwing a LostError before receiving the quit
+            # message. Not that it really matters as receivers will
+            # gracefully quit when a stream disconnects - but in general is
+            # there a better way to handle waiting for any pending messages
+            # to be sent before an outlet is destroyed?
+            time.sleep(0.5)
+            self.cleanup()
+
+    def cleanup(self):
+        pass
+
+
+class DataStream(BaseStreamProcess, BaseStream):
+    """Data stream that runs in a separate process."""
+
+    def __init__(self, name, content_type, channel_count, nominal_srate,
+                 channel_format, *, source_id=None, manufacturer='pylsltools',
+                 channel_labels=None, channel_types=None, channel_units=None,
+                 recv_message_queue=None, send_message_queue=None, **kwargs):
+        super().__init__(recv_message_queue, send_message_queue, **kwargs)
+        BaseStream.__init__(self, name, content_type, channel_count,
+                            nominal_srate, channel_format,
+                            source_id=source_id,
+                            manufacturer=manufacturer)
+
+
+        # Set class attributes.
         self.channel_labels = channel_labels
         self.channel_types = channel_types
         self.channel_units = channel_units
@@ -76,13 +132,10 @@ class DataStream(BaseStream, Process):
         # Event to terminate the process.
         self.stop_event = multiprocessing.Event()
 
-    def run(self):
-        pass
-
     def make_stream_info(self, name, content_type, channel_count,
-                         nominal_srate, channel_format, source_id,
-                         manufacturer, channel_labels=None, channel_types=None,
-                         channel_units=None):
+                         nominal_srate, channel_format, *, source_id=None,
+                         manufacturer=None, channel_labels=None,
+                         channel_types=None, channel_units=None):
         """Return a pylsl StreamInfo object.
 
         StreamInfo objects are not thread safe, so must be created
@@ -154,15 +207,15 @@ class DataStream(BaseStream, Process):
 class BaseMarkerStream(BaseStream):
     """Simple marker stream."""
 
-    def __init__(self, name, content_type, *, source_id, manufacturer,
-                 **kwargs):
+    def __init__(self, name, content_type, *, source_id=None,
+                 manufacturer=None):
         channel_count = 1
         nominal_srate = IRREGULAR_RATE
         channel_format = 'string'
 
         super().__init__(name, content_type, channel_count, nominal_srate,
                          channel_format, source_id=source_id,
-                         manufacturer=manufacturer, **kwargs)
+                         manufacturer=manufacturer)
 
     def make_stream_info(self, name, content_type, source_id, manufacturer):
         """Return a pylsl StreamInfo object.
@@ -193,18 +246,12 @@ class BaseMarkerStream(BaseStream):
             return None
 
 
-class MarkerStreamThread(BaseMarkerStream, Thread):
+class MarkerStreamThread(BaseStreamThread, BaseMarkerStream):
     """Marker stream that runs in a separate thread."""
 
-    send_message_queue = None
-
-    def __init__(self, name, content_type, *, source_id=None,
+    def __init__(self, name, content_type, *, source_id='',
                  manufacturer='pylsltools', **kwargs):
-        super().__init__(name, content_type, source_id=source_id,
-                         manufacturer=manufacturer, **kwargs)
-
-        # Event to terminate the thread.
-        self.stop_event = threading.Event()
-
-    def run(self):
-        pass
+        super().__init__(**kwargs)
+        BaseMarkerStream.__init__(self, name, content_type,
+                                  source_id=source_id,
+                                  manufacturer='pylsltools')

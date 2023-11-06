@@ -24,11 +24,11 @@ class TestStream (DataStream):
     control_states = ControlStates
 
     def __init__(self, stream_idx, functions, name, content_type,
-                 channel_count, nominal_srate, channel_format,
-                 recv_message_queue, send_message_queue, *,
+                 channel_count, nominal_srate, channel_format, *,
                  source_id=None, channel_labels=None, channel_types=None,
                  channel_units=None, latency=None, max_time=None,
                  max_samples=None, chunk_size=None, max_buffered=None,
+                 recv_message_queue=None, send_message_queue=None,
                  barrier=None, debug=False, **kwargs):
         if name:
             name = f'{name} test stream {stream_idx} {" ".join(g for g in functions)}'
@@ -42,15 +42,18 @@ class TestStream (DataStream):
         # be different and appear as a new LSL stream so automatic
         # recovery will not work. To test LSL automatic recovery provide
         # an explicit source_id.
-        if source_id is None:
+        if not source_id:
             source_id = f'{os.path.basename(__file__)}:{os.getpid()}'
 
         super().__init__(name, content_type, channel_count, nominal_srate,
-                         channel_format, recv_message_queue,
-                         send_message_queue, source_id=source_id,
+                         channel_format,
+                         source_id=source_id,
                          channel_labels=channel_labels,
                          channel_types=channel_types,
-                         channel_units=channel_units, **kwargs)
+                         channel_units=channel_units,
+                         recv_message_queue=recv_message_queue,
+                         send_message_queue=send_message_queue,
+                         **kwargs)
 
         # Initialise values required by data generating functions.
         self.sample_count = 0
@@ -73,9 +76,12 @@ class TestStream (DataStream):
         delta = 1 / self.nominal_srate
         info = self.make_stream_info(self.name, self.content_type,
                                      self.channel_count, self.nominal_srate,
-                                     self.channel_format, self.source_id,
-                                     self.manufacturer, self.channel_labels,
-                                     self.channel_types, self.channel_units)
+                                     self.channel_format,
+                                     source_id=self.source_id,
+                                     manufacturer=self.manufacturer,
+                                     channel_labels=self.channel_labels,
+                                     channel_types=self.channel_types,
+                                     channel_units=self.channel_units)
         self.outlet = StreamOutlet(info, self.chunk_size, self.max_buffered)
 
         # Synchronise sub-processes before entering main loop.
