@@ -53,6 +53,7 @@ class MonitorReceiver(MarkerStreamThread):
         """Monitor Receiver main loop."""
         # We need to resolve the StreamInfo again because they don't
         # appear to be thread-safe.
+        timeout = 0.5
         sender_info = None
         pred = ' and '.join([
                 f"name='{self.sender_name}'",
@@ -61,7 +62,7 @@ class MonitorReceiver(MarkerStreamThread):
             ])
 
         while not sender_info and not self.is_stopped():
-            sender_info = resolve_bypred(pred, timeout=0.5)
+            sender_info = resolve_bypred(pred, timeout=timeout)
         if not sender_info:
             return
         sender_info = sender_info[0]
@@ -73,12 +74,12 @@ class MonitorReceiver(MarkerStreamThread):
 
         try:
             while not self.is_stopped():
-                message, timestamp = self.inlet.pull_sample(0.5)
+                message, timestamp = self.inlet.pull_sample(timeout)
                 if message:
                     if self.debug:
                         print(f'{self.name}, timestamp: {timestamp}, message: {message}')
                         # Handle message.
-                        message = self.parse_message(message)
+                    message = self.parse_message(message)
                     print(message)
         except LostError as exc:
             print(f'{self.name}: {exc}')
