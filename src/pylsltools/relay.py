@@ -5,7 +5,6 @@ import asyncio
 import multiprocessing as mp
 import platform
 from threading import Event, Thread
-from time import sleep
 
 from pylsl import ContinuousResolver
 
@@ -100,7 +99,7 @@ class Relay:
                     new_stream.start()
                     print(f'New stream added: {stream.name()}.')
             self.remove_lost_streams()
-            sleep(1)
+            self.stop_event.wait(1)
 
     async def handle_messages(self):
         try:

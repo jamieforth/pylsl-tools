@@ -59,7 +59,7 @@ class MonitorReceiver(MarkerStreamThread):
                 f"type='{self.content_type}'",
                 f"hostname='{self.sender_hostname}'"
             ])
-        print(pred)
+
         while not sender_info and not self.is_stopped():
             sender_info = resolve_bypred(pred, timeout=0.5)
         if not sender_info:

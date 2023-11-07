@@ -2,7 +2,6 @@
 
 import argparse
 from threading import Event, Thread
-from time import sleep
 
 from pylsl import ContinuousResolver
 from pylsltools.streams import MonitorReceiver
@@ -41,7 +40,7 @@ class Monitor:
                     new_stream.start()
                     print(f'New stream added {stream.name()}.')
             self.cleanup()
-            sleep(1)
+            self.stop_event.wait(1)
 
     def stop(self):
         """Stop monitor thread and all monitor stream threads."""
