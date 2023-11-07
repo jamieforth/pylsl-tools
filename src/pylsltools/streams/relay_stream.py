@@ -116,9 +116,11 @@ class RelayStream(DataStream):
                             or (sample_count % self.nominal_srate) == 0):
                         self.print(self.name, now, timestamp,
                                    self.content_type, sample)
-                    if self.monitor and (sample_count %
-                                         (self.nominal_srate *
-                                          self.monitor_interval)) == 0:
+                    if self.monitor and (
+                            self.monitor.nominal_srate == 0
+                            or (sample_count %
+                                (self.nominal_srate *
+                                 self.monitor_interval))) == 0:
                         self.monitor.send(name=self.sender_name,
                                           sample_count=sample_count)
                     sample_count = sample_count + 1

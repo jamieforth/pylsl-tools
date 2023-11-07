@@ -246,11 +246,13 @@ def main():
     if len(pred) > 0:
         pred = ("not(starts-with(name, '_relay_')) and " +
                 "not(starts-with(name, '_monitor_')) and " +
-                "not(type='control')) and ") + pred
+                "not(type='control')) and " +
+                "not(type='Markers')) and ") + pred
     else:
         pred = ("not(starts-with(name, '_relay_')) and " +
                 "not(starts-with(name, '_monitor_')) and " +
-                "not(type='control')")
+                "not(type='control') and " +
+                "not(type='Markers')")
     if not args.non_local:
         pred = f"hostname='{platform.node()}' and " + pred
     print(f'Stream matching predicate: {repr(pred)}')
