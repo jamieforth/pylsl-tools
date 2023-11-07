@@ -78,7 +78,7 @@ class MonitorReceiver(MarkerStreamThread):
                 if message:
                     if self.debug:
                         print(f'{self.name}, timestamp: {timestamp}, message: {message}')
-                        # Handle message.
+                    # Handle message.
                     message = self.parse_message(message)
                     print(message)
         except LostError as exc:
