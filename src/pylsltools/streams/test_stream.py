@@ -82,7 +82,9 @@ class TestStream (DataStream):
                                      channel_labels=self.channel_labels,
                                      channel_types=self.channel_types,
                                      channel_units=self.channel_units)
-        self.outlet = StreamOutlet(info, self.chunk_size, self.max_buffered)
+        if self.debug:
+            print(info.as_xml())
+
         outlet = StreamOutlet(info, self.chunk_size, self.max_buffered)
 
         # Synchronise sub-processes before entering main loop.
@@ -112,6 +114,7 @@ class TestStream (DataStream):
         finally:
             # Call stop on exiting the main loop to ensure cleanup.
             self.stop()
+            self.cleanup()
             print(f'Ended: {self.name}.')
 
     def initialise_time(self, start_time):

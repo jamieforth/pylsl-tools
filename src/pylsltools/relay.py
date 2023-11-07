@@ -61,7 +61,6 @@ class Relay:
         # Block until resolver thread returns.
         self.thread.join()
 
-
     def run(self, chunk_size, max_buffered, re_encode_timestamps, output,
             monitor, monitor_interval):
 

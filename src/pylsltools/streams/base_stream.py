@@ -3,7 +3,6 @@
 import json
 import multiprocessing
 import threading
-import time
 from multiprocessing import Process
 from threading import Thread
 
@@ -47,17 +46,11 @@ class BaseStreamThread(Thread, BaseStream):
 
     def stop(self):
         if not self.is_stopped():
+            print('Terminating thread...')
             self.stop_event.set()
             if self.send_message_queue:
                 # Unblock any waiting threads.
                 self.send_message_queue.put('')
-            # Pause thread before destroying outlet to try and avoid any
-            # receivers throwing a LostError before receiving the quit
-            # message. Not that it really matters as receivers will
-            # gracefully quit when a stream disconnects - but in general is
-            # there a better way to handle waiting for any pending messages
-            # to be sent before an outlet is destroyed?
-            time.sleep(0.5)
 
     def cleanup(self):
         pass
@@ -92,17 +85,11 @@ class BaseStreamProcess(Process, BaseStream):
 
     def stop(self):
         if not self.is_stopped():
+            print('Terminating process...')
             self.stop_event.set()
             if self.send_message_queue:
                 # Unblock any waiting threads.
                 self.send_message_queue.put('')
-            # Pause thread before destroying outlet to try and avoid any
-            # receivers throwing a LostError before receiving the quit
-            # message. Not that it really matters as receivers will
-            # gracefully quit when a stream disconnects - but in general is
-            # there a better way to handle waiting for any pending messages
-            # to be sent before an outlet is destroyed?
-            time.sleep(0.5)
 
     def cleanup(self):
         pass

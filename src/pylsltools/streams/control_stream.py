@@ -80,6 +80,7 @@ class ControlReceiver(MarkerStreamThread):
         self.state = self.control_states.STOP
         self.send_message_queue = queue.SimpleQueue()
         self.debug = debug
+        self.inlet = None
 
     def run(self):
         print('Waiting for control stream.')
@@ -96,11 +97,10 @@ class ControlReceiver(MarkerStreamThread):
                                  recover=False, processing_flags=proc_ALL)
         try:
             while not self.is_stopped():
-                # Blocking. No timeout needed because we can close the
-                # inlet on stop.
-                message, time_stamp = self.inlet.pull_sample()
-                print(f'Control {self.name}, time_stamp: {time_stamp}, message: {message}')
+                # Blocking.
+                message, time_stamp = self.inlet.pull_sample(0.2)
                 if message:
+                    print(f'Control {self.name}, time_stamp: {time_stamp}, message: {message}')
                     # Handle message.
                     message = self.parse_message(message, time_stamp)
                     # Only notify on state changes.
@@ -121,8 +121,9 @@ class ControlReceiver(MarkerStreamThread):
 
     def cleanup(self):
         print('Controller cleanup')
-        if isinstance(self.inlet, StreamInlet):
+        if self.inlet:
             self.inlet.close_stream()
+        time.sleep(0.2)
 
     def get_message(self, timeout=None):
         try:

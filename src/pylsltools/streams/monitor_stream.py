@@ -3,8 +3,9 @@
 For receiving monitoring information from relay streams.
 """
 
-import os
 import json
+import os
+import time
 
 from pylsl import LostError, StreamInlet, StreamOutlet, resolve_bypred
 from pylsltools.streams import BaseMarkerStream, MarkerStreamThread
@@ -48,6 +49,7 @@ class MonitorReceiver(MarkerStreamThread):
         self.sender_name = name
         self.sender_hostname = hostname
         self.debug = debug
+        self.inlet = None
 
     def run(self):
         """Monitor Receiver main loop."""
@@ -90,5 +92,6 @@ class MonitorReceiver(MarkerStreamThread):
             print(f'Ended: {self.name}.')
 
     def cleanup(self):
-        if isinstance(self.inlet, StreamInlet):
+        if self.inlet:
             self.inlet.close_stream()
+        time.sleep(0.2)

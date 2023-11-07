@@ -7,6 +7,7 @@ timestamps before relaying across the network.
 
 import os
 import textwrap
+import time
 
 from pylsl import (LostError, StreamInlet, StreamOutlet, local_clock,
                    resolve_bypred)
@@ -47,6 +48,7 @@ class RelayStream(DataStream):
         self.chunk_size = chunk_size
         self.max_buffered = max_buffered
         self.debug = debug
+        self.inlet = None
 
     def run(self):
         """Relay process main loop."""
@@ -102,7 +104,7 @@ class RelayStream(DataStream):
             # TODO: Integrate control states!
             # Could use this to pre-process/reduce data being relayed.
             while not self.is_stopped():
-                sample, timestamp = self.inlet.pull_sample()
+                sample, timestamp = self.inlet.pull_sample(0.2)
                 now = local_clock()
                 #chunk, timestamps = self.inlet.pull_chunk(timeout)
                 if sample:
@@ -143,5 +145,12 @@ class RelayStream(DataStream):
 
     def cleanup(self):
         print('Relay cleanup')
-        if self.inlet and isinstance(self.inlet, StreamInlet):
+        if self.inlet:
             self.inlet.close_stream()
+        # Pause thread before destroying outlet to try and avoid any
+        # receivers throwing a LostError before receiving the quit
+        # message. Not that it really matters as receivers will
+        # gracefully quit when a stream disconnects - but in general is
+        # there a better way to handle waiting for any pending messages
+        # to be sent before an outlet is destroyed?
+        time.sleep(0.2)
