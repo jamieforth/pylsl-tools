@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pylsltools"
-version = "0.0.1"
+version = "0.0.2"
 authors = [
    {name="Jamie Forth", email="j.forth@gold.ac.uk"},
 ]
