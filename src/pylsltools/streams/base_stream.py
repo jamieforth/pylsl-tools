@@ -58,7 +58,6 @@ class BaseStreamThread(Thread, BaseStream):
             # there a better way to handle waiting for any pending messages
             # to be sent before an outlet is destroyed?
             time.sleep(0.5)
-            self.cleanup()
 
     def cleanup(self):
         pass
@@ -104,7 +103,6 @@ class BaseStreamProcess(Process, BaseStream):
             # there a better way to handle waiting for any pending messages
             # to be sent before an outlet is destroyed?
             time.sleep(0.5)
-            self.cleanup()
 
     def cleanup(self):
         pass

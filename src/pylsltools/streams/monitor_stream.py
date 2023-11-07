@@ -66,23 +66,28 @@ class MonitorReceiver(MarkerStreamThread):
             return
         sender_info = sender_info[0]
 
-        inlet = StreamInlet(sender_info, max_buflen=1, max_chunklen=1,
-                            recover=False)
+        self.inlet = StreamInlet(sender_info, max_buflen=1, max_chunklen=1,
+                                 recover=False)
         if self.debug:
-            print(inlet.info().as_xml())
+            print(self.inlet.info().as_xml())
 
         try:
             while not self.is_stopped():
-                message, timestamp = inlet.pull_sample()
-                if self.debug:
-                    print(f'{self.name}, timestamp: {timestamp}, message: {message}')
-                # Handle message.
-                message = self.parse_message(message)
+                message, timestamp = self.inlet.pull_sample(0.5)
                 if message:
+                    if self.debug:
+                        print(f'{self.name}, timestamp: {timestamp}, message: {message}')
+                        # Handle message.
+                        message = self.parse_message(message)
                     print(message)
         except LostError as exc:
             print(f'{self.name}: {exc}')
         finally:
             # Call stop on exiting the main loop to ensure cleanup.
             self.stop()
+            self.cleanup()
             print(f'Ended: {self.name}.')
+
+    def cleanup(self):
+        if isinstance(self.inlet, StreamInlet):
+            self.inlet.close_stream()

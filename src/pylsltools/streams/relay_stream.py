@@ -76,11 +76,11 @@ class RelayStream(DataStream):
         # continuous resolver at least allows for a graceful
         # exit. Alternatively, set a timeout on pull_sample and return
         # after a period of waiting to see if the stream reconnects.
-        inlet = StreamInlet(sender_info,
-                            max_buflen=self.max_buffered,
-                            max_chunklen=self.chunk_size,
-                            recover=False,
-                            processing_flags=0)
+        self.inlet = StreamInlet(sender_info,
+                                 max_buflen=self.max_buffered,
+                                 max_chunklen=self.chunk_size,
+                                 recover=False,
+                                 processing_flags=0)
 
         if self.output:
             # FIXME: Append desc custom metadata.
@@ -102,9 +102,9 @@ class RelayStream(DataStream):
             # TODO: Integrate control states!
             # Could use this to pre-process/reduce data being relayed.
             while not self.is_stopped():
-                sample, timestamp = inlet.pull_sample()
+                sample, timestamp = self.inlet.pull_sample()
                 now = local_clock()
-                #chunk, timestamps = inlet.pull_chunk(timeout)
+                #chunk, timestamps = self.inlet.pull_chunk(timeout)
                 if sample:
                     if self.re_encode_timestamps:
                         # Re-encode timestamp.
@@ -129,6 +129,7 @@ class RelayStream(DataStream):
         finally:
             # Call stop on exiting the main loop to ensure cleanup.
             self.stop()
+            self.cleanup()
             print(f'Ended: {self.name}.')
 
     def print(self, name, now, timestamp, content_type, data):
@@ -138,3 +139,8 @@ class RelayStream(DataStream):
         timestamp: {timestamp:.6f},
         {content_type}: {data}
         '''), 200))
+
+    def cleanup(self):
+        print('Relay cleanup')
+        if self.inlet and isinstance(self.inlet, StreamInlet):
+            self.inlet.close_stream()
