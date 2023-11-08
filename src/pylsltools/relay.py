@@ -245,8 +245,8 @@ def main():
     if len(pred) > 0:
         pred = ("not(starts-with(name, '_relay_')) and " +
                 "not(starts-with(name, '_monitor_')) and " +
-                "not(type='control')) and " +
-                "not(type='Markers')) and ") + pred
+                "not(type='control') and " +
+                "not(type='Markers') and " + pred)
     else:
         pred = ("not(starts-with(name, '_relay_')) and " +
                 "not(starts-with(name, '_monitor_')) and " +
