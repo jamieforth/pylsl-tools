@@ -13,7 +13,8 @@ class BaseStream():
     """Base stream initialised with LSL properties."""
 
     def __init__(self, name, content_type, channel_count, nominal_srate,
-                 channel_format, source_id, manufacturer):
+                 channel_format, source_id, manufacturer=''):
+
         # Set class attributes.
         self.name = name
         self.content_type = content_type
@@ -99,7 +100,7 @@ class DataStream(BaseStreamProcess, BaseStream):
     """Data stream that runs in a separate process."""
 
     def __init__(self, name, content_type, channel_count, nominal_srate,
-                 channel_format, *, source_id=None, manufacturer='pylsltools',
+                 channel_format, *, source_id='', manufacturer='pylsltools',
                  channel_labels=None, channel_types=None, channel_units=None,
                  recv_message_queue=None, send_message_queue=None, **kwargs):
         super().__init__(recv_message_queue, send_message_queue, **kwargs)
@@ -118,7 +119,7 @@ class DataStream(BaseStreamProcess, BaseStream):
         self.stop_event = multiprocessing.Event()
 
     def make_stream_info(self, name, content_type, channel_count,
-                         nominal_srate, channel_format, *, source_id=None,
+                         nominal_srate, channel_format, *, source_id='',
                          manufacturer=None, channel_labels=None,
                          channel_types=None, channel_units=None):
         """Return a pylsl StreamInfo object.
@@ -192,7 +193,7 @@ class DataStream(BaseStreamProcess, BaseStream):
 class BaseMarkerStream(BaseStream):
     """Simple marker stream."""
 
-    def __init__(self, name, content_type, *, source_id=None,
+    def __init__(self, name, content_type, *, source_id='',
                  manufacturer=None):
         channel_count = 1
         nominal_srate = IRREGULAR_RATE
