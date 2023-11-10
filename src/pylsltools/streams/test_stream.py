@@ -43,7 +43,7 @@ class TestStream (DataStream):
         # recovery will not work. To test LSL automatic recovery provide
         # an explicit source_id.
         if not source_id:
-            source_id = f'{os.path.basename(__file__)}:{os.getpid()}'
+            source_id = f'{os.path.basename(__file__)}:{os.getpid()}:{stream_idx}'
 
         super().__init__(name, content_type, channel_count, nominal_srate,
                          channel_format,
