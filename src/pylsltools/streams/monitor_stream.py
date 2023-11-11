@@ -17,7 +17,7 @@ class MonitorSender(BaseMarkerStream):
     This should run in the same thread as the stream being monitored.
     """
 
-    def __init__(self, name, content_type='monitor', source_id=None,
+    def __init__(self, name, content_type='monitor', source_id='',
                  manufacturer='pylsltools', debug=False, **kwargs):
 
         if not source_id:
@@ -42,14 +42,18 @@ class MonitorSender(BaseMarkerStream):
 
 class MonitorReceiver(MarkerStreamThread):
 
-    def __init__(self, name, content_type, hostname, debug=False, **kwargs):
-        super().__init__(name, content_type, **kwargs)
+    def __init__(self, name, content_type, hostname, source_id, *,
+                 send_message_queue=None, debug=False, **kwargs):
+
+        super().__init__(name, content_type, source_id=source_id, **kwargs)
 
         # Initialise local attributes.
         self.sender_name = name
         self.sender_hostname = hostname
+        self.send_message_queue = send_message_queue
         self.debug = debug
         self.inlet = None
+        self.sample_count = 0
 
     def run(self):
         """Monitor Receiver main loop."""
@@ -82,9 +86,20 @@ class MonitorReceiver(MarkerStreamThread):
                         print(f'{self.name}, timestamp: {timestamp}, message: {message}')
                     # Handle message.
                     message = self.parse_message(message)
-                    print(message)
+                    self.origin_name = message['name']
+                    message['source_id'] = self.source_id
+                    message['sample_diff'] = (message['sample_count']
+                                              - self.sample_count)
+                    message['stream_lost'] = False
+                    self.send_message_queue.put(message)
+                    self.sample_count = message['sample_count']
         except LostError as exc:
             print(f'{self.name}: {exc}')
+            self.send_message_queue.put({'name': self.origin_name,
+                                         'source_id': self.source_id,
+                                         'sample_count': self.sample_count,
+                                         'sample_diff': 0,
+                                         'stream_lost': True})
         finally:
             # Call stop on exiting the main loop to ensure cleanup.
             self.stop()

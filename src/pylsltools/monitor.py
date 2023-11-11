@@ -1,29 +1,49 @@
 """Script to monitor data streams over LSL."""
 
 import argparse
+import asyncio
+import os
+import queue
+import sys
+import textwrap
 from threading import Event, Thread
 
 from pylsl import ContinuousResolver
+
 from pylsltools.streams import MonitorReceiver
+from pylsltools.utils import dev_to_name
 
 
 class Monitor:
     """Monitor matching streams."""
 
-    def __init__(self, pred):
+    def __init__(self, pred, debug=False):
         self.pred = pred
+        self.debug = debug
         self.stop_event = Event()
         self.active_streams = {}
+        # For receiving messages from sub-processes.
+        self.recv_message_queue = queue.SimpleQueue()
 
-    def start(self, debug=False):
+        self.stream_log = {}
+
+    def start(self):
+        self.thread = Thread(target=self.run)
+        self.thread.start()
+
+        # Use asyncio to handle asynchronous messages in the main thread.
+        with asyncio.Runner() as runner:
+            # Block here until runner returns.
+            runner.run(self.handle_messages())
+
+        # Block main thread until resolver thread returns.
+        print('block')
+        self.thread.join()
+        print('after join')
+
+    def run(self):
         resolver = ContinuousResolver(pred=self.pred, forget_after=1)
 
-        self.thread = Thread(target=self.run, args=[resolver, debug])
-        self.thread.start()
-        # Block main thread until resolver thread returns.
-        self.thread.join()
-
-    def run(self, resolver, debug):
         while not self.is_stopped():
             # FIXME: Improve this? Continuous resolver always returns a
             # new StreamInfo object so we need to continually regenerate
@@ -32,10 +52,13 @@ class Monitor:
             for stream in streams:
                 stream_key = self.make_stream_key(stream)
                 if stream_key not in self.active_streams.keys():
-                    new_stream = MonitorReceiver(stream.name(),
-                                                 stream.type(),
-                                                 stream.hostname(),
-                                                 debug)
+                    new_stream = MonitorReceiver(
+                        stream.name(),
+                        stream.type(),
+                        stream.hostname(),
+                        stream.source_id(),
+                        send_message_queue=self.recv_message_queue,
+                        debug=self.debug)
                     self.active_streams[stream_key] = new_stream
                     new_stream.start()
                     print(f'New stream added {stream.name()}.')
@@ -44,12 +67,62 @@ class Monitor:
 
     def stop(self):
         """Stop monitor thread and all monitor stream threads."""
-        print('Stopping all monitor streams.')
-        self.stop_event.set()
-        for stream in self.active_streams.values():
-            stream.stop()
-        for stream in self.active_streams.values():
-            stream.join()
+        if not self.is_stopped():
+            self.stop_event.set()
+            for stream in self.active_streams.values():
+                stream.stop()
+            for stream in self.active_streams.values():
+                stream.join()
+            # Unblock receive message queue.
+            self.recv_message_queue.put('')
+
+    async def handle_messages(self):
+        try:
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(self.recv_from_streams())
+        finally:
+            print('End handle messages.')
+
+    async def recv_from_streams(self):
+        """Coroutine to handle messages from other threads."""
+        try:
+            while not self.is_stopped() or (
+                    not self.recv_message_queue.empty()):
+                # Block here until message received.
+                message = await asyncio.to_thread(self.recv_message_queue.get)
+                if message:
+                    self.stream_log[message['source_id']] = message
+                    if self.debug:
+                        print(f'{__class__} received message: {message}')
+                    else:
+                        self.print_log()
+        finally:
+            if self.debug:
+                print('End stream messaging.')
+            self.stop()
+
+    def print_log(self):
+        if 'win32' in sys.platform:
+            os.system('cls')
+        else:
+            # Posix
+            os.system('clear')
+
+        for stream, state in sorted(self.stream_log.items()):
+            print(textwrap.fill(textwrap.dedent(f'''\
+            {state['name']} \t
+            sample count: {state['sample_count']} \t
+            new samples: {state['sample_diff']:04} \t
+            stream OK: {not state['stream_lost']}
+            '''), 200))
+
+            # print(textwrap.fill(textwrap.dedent(f'''\
+            # {state['hostname']}
+            # {dev_to_name(state['hostname'])}
+            # sample count: {state['sample_count']} \t
+            # new samples: {state['sample_diff']:04} \t
+            # stream OK: {not state['stream_lost']}
+            # '''), 200))
 
     def is_stopped(self):
         return self.stop_event.is_set()
@@ -94,11 +167,11 @@ def main():
     else:
         pred = "starts-with(name, '_monitor_')"
 
-    monitor = Monitor(pred)
+    monitor = Monitor(pred, debug=args.debug)
 
     # Start continuous resolver and block unless keyboard interrupt.
     try:
-        monitor.start(debug=args.debug)
+        monitor.start()
     except Exception as exc:
         monitor.stop()
         raise exc
