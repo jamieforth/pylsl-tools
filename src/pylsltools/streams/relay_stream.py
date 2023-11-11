@@ -122,8 +122,10 @@ class RelayStream(DataStream):
                             (sample_count %
                              (self.nominal_srate *
                               self.monitor_interval)) == 0)):
-                        self.monitor.send(name=self.sender_name,
-                                          sample_count=sample_count)
+                        self.monitor.send(
+                            hostname=self.sender_hostname,
+                            name=self.sender_name,
+                            sample_count=sample_count)
                     sample_count = sample_count + 1
         except LostError as exc:
             print(f'{self.name}: {exc}')
