@@ -7,6 +7,11 @@
 pip install -e git+https://github.com/jamieforth/pylsl-tools.git#egg=pylsltools
 ```
 
+```
+# Optionally install additional dependencies.
+pip install -e 'git+https://github.com/jamieforth/pylsl-tools.git#egg=pylsltools[all]'
+```
+
 ### Create a new environment from this repo using `pipenv`
 
 ```
@@ -16,7 +21,7 @@ pipenv install
 ```
 
 ```
-# Optionall install additional dependencies.
+# Optionally install additional dependencies.
 pipenv install --categories "packages xdf dev-packages"
 ```
 

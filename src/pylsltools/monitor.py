@@ -24,7 +24,8 @@ class Monitor:
         self.active_streams = {}
         # For receiving messages from sub-processes.
         self.recv_message_queue = queue.SimpleQueue()
-
+        # Dictionary to keep track of all seen streams and status
+        # logging.
         self.stream_log = {}
 
     def start(self):

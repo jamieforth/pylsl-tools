@@ -109,7 +109,6 @@ class DataStream(BaseStreamProcess, BaseStream):
                             source_id=source_id,
                             manufacturer=manufacturer)
 
-
         # Set class attributes.
         self.channel_labels = channel_labels
         self.channel_types = channel_types
