@@ -81,6 +81,7 @@ class ControlReceiver(MarkerStreamThread):
         self.send_message_queue = queue.SimpleQueue()
         self.debug = debug
         self.inlet = None
+        self.clock_offset = None
 
     def run(self):
         print('Waiting for control stream.')
@@ -95,11 +96,12 @@ class ControlReceiver(MarkerStreamThread):
 
         self.inlet = StreamInlet(sender_info, max_buflen=1, max_chunklen=1,
                                  recover=False, processing_flags=proc_ALL)
+        self.clock_offset = self.inlet.time_correction()
         try:
             while not self.is_stopped():
                 # Blocking.
                 if self.debug:
-                    print(self.inlet.time_correction())
+                    print(self.clock_offset - self.inlet.time_correction())
                 message, time_stamp = self.inlet.pull_sample(0.2)
                 if message:
                     print(f'Control {self.name}, time_stamp: {time_stamp}, message: {message}')
