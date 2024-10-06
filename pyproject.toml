@@ -1,16 +1,16 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pylsltools"
-version = "0.0.2"
+version = "0.1.0"
 authors = [
-   {name="Jamie Forth", email="j.forth@gold.ac.uk"},
+    {name="Jamie Forth", email="j.forth@gold.ac.uk"},
 ]
 description = "Tools for working with LSL data streams."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = "==3.11.*"
 license = {text = "AGPL-3.0-or-later"}
 
 dependencies = [
@@ -18,7 +18,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-xdf = ["pyxdftools @ git+https://github.com/jamieforth/pyxdf-tools.git"]
+xdf = [
+    "pyxdftools @ git+https://github.com/jamieforth/pyxdf-tools.git",
+]
+
 [project.urls]
 "Homepage" = "https://github.com/jamieforth/pylsl-tools"
 "Bug Tracker" = "https://github.com/jamieforth/pylsl-tools/issues"
@@ -29,3 +32,11 @@ lsl-monitor = "pylsltools.monitor:main"
 lsl-playback = "pylsltools.playback:main"
 lsl-relay = "pylsltools.relay:main"
 lsl-simulate = "pylsltools.simulate:main"
+
+[tool.pdm]
+distribution = true
+
+[tool.pdm.dev-dependencies]
+dev = [
+    "python-lsp-server[all]",
+]

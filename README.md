@@ -1,6 +1,43 @@
 # pylsl-tools
 
 ## Install
+### Create a new environment from this repo using `PDM`
+
+PDM is a package and dependency manager, this is simplest way to set
+up a self-contained virtual environment with everything installed.
+
+First install PDM: https://pdm-project.org/.
+
+```
+git clone https://github.com/jamieforth/pylsl-tools.git
+cd pylsl-tools
+pdm install
+
+# Or optionally install additional dependencies.
+
+pdm install --with xdf
+```
+
+The full install includes
+[pyxdf-tools](https://github.com/jamieforth/pyxdf-tools/tree/main) for
+processing `xdf` files.
+
+### Updating
+
+```
+git pull
+pdm update
+```
+
+### Using
+
+The virtual environment can be activated/deactivated in the usual way.
+
+```
+source .venv/bin/activate
+deactivate
+```
+
 ### Install into an existing environment
 
 ```
@@ -11,22 +48,6 @@ pip install -e git+https://github.com/jamieforth/pylsl-tools.git#egg=pylsltools
 # Optionally install additional dependencies.
 pip install -e 'git+https://github.com/jamieforth/pylsl-tools.git#egg=pylsltools[all]'
 ```
-
-### Create a new environment from this repo using `pipenv`
-
-```
-git clone https://github.com/jamieforth/pylsl-tools.git
-cd pylsl-tools
-pipenv install
-```
-
-```
-# Optionally install additional dependencies.
-pipenv install --categories "packages xdf dev-packages"
-```
-
-The full install includes the [pyxdf-tools](https://github.com/jamieforth/pyxdf-tools/tree/main)
-package for parsing `xdf` files (e.g. for creating mock streams).
 
 ## Usage
 ### lsl-simulate
