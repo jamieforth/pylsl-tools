@@ -11,7 +11,7 @@ Install the [`liblsl` system library](https://github.com/sccn/liblsl).
 None. A pre-built binary wheel distribution of `liblsl` will be
 installed automatically when installing `pylsl-tools`.
 
-### Create a new environment from this repo using `PDM`
+### Option 1: Create a new environment from this repo using `PDM`
 
 PDM is a package and dependency manager, this is simplest way to set
 up a self-contained virtual environment with everything installed.
@@ -32,14 +32,14 @@ The full install includes
 [pyxdf-tools](https://github.com/jamieforth/pyxdf-tools/tree/main) for
 processing `xdf` files.
 
-### Updating
+#### Updating
 
 ```
 git pull
 pdm update
 ```
 
-### Using
+#### Activating the virtual environment
 
 The virtual environment can be activated/deactivated in the usual way.
 
@@ -48,7 +48,7 @@ source .venv/bin/activate
 deactivate
 ```
 
-### Install into an existing environment
+### Option 2: Install into an existing environment
 
 ```
 pip install -e git+https://github.com/jamieforth/pylsl-tools.git#egg=pylsltools
