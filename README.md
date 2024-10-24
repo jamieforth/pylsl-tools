@@ -1,6 +1,16 @@
 # pylsl-tools
 
 ## Install
+### Prerequisites
+#### Linux/Mac
+
+Install the [`liblsl` system library](https://github.com/sccn/liblsl).
+
+#### Windows
+
+None. A pre-built binary wheel distribution of `liblsl` will be
+installed automatically when installing `pylsl-tools`.
+
 ### Create a new environment from this repo using `PDM`
 
 PDM is a package and dependency manager, this is simplest way to set
