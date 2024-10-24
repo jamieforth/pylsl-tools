@@ -64,14 +64,14 @@ pip install -e 'git+https://github.com/jamieforth/pylsl-tools.git#egg=pylsltools
 
 Generate test synthetic data streams. Each synthetic stream runs in
 its own process and generates data slightly ahead of time according to
-the `--latency`` option (default 0.2 seconds) to ensure all processes
+the `--latency` option (default 0.2 seconds) to ensure all processes
 have sufficient time to generate samples. Any processes that fail to
 generate their data in time will print a warning message to increase
 the latency.
 
-With the `--sync`` option (default) all samples are generated with
+With the `--sync` option (default) all samples are generated with
 respect to a synchronised logical time (i.e. all timestamps will
-correspond exactly to the sample rate). With the --no-sync option
+correspond exactly to the sample rate). With the `--no-sync` option
 timestamps will be real-time timestamps (i.e. there will be a very
 small amount of real-world jitter). In practice the jitter should be
 very small so long as their is sufficient latency to ensure all
