@@ -46,7 +46,7 @@ pip install -e git+https://github.com/jamieforth/pylsl-tools.git#egg=pylsltools
 
 ```
 # Optionally install additional dependencies.
-pip install -e 'git+https://github.com/jamieforth/pylsl-tools.git#egg=pylsltools[all]'
+pip install -e 'git+https://github.com/jamieforth/pylsl-tools.git#egg=pylsltools[xdf]'
 ```
 
 ## Usage
@@ -74,7 +74,7 @@ lsl-simulate --num-streams 2 --num-channels 3 --sample-rate 2 --debug
 
 ```
 # Higher sample rate simulated EEG streams.
-lsl-simulate --num-streams 10 --num-channels 30 --sample-rate 500 --content-type eeg
+lsl-simulate --num-streams 1 --num-channels 35 --sample-rate 512 --content-type eeg
 ```
 
 See `lsl-simulate --help` for all options.
@@ -83,7 +83,7 @@ Streams can also be remote controlled by an `lsl-control` stream by
 passing in the control stream name.
 
 ```
-lsl-simulate --control-name ctrl1 ...
+lsl-simulate --num-streams 1 --num-channels 35 --sample-rate 512 --content-type eeg --control-name ctrl1
 ```
 
 
@@ -97,15 +97,20 @@ lsl-control --name ctrl1
 ```
 
 This will then allow commands to be typed into the terminal which will
-be executed by receiving streams at the correct time. For this to work
-reliably there must be a specified latency larger than any real-world
-network latency (default 0.5 seconds). Any messages that arrive late
-will print a warning on the receiving device. If a simulated stream
-receives a late message it will catch up without dropping samples (by
-sending a burst of samples each with the correct logical timestamp).
-Real-time streams will drop samples but will send correctly
-timestamped samples from the point at which they receive a late
-message.
+be executed by receiving streams at the “correct time” (= real-time
+resolved time according to LSL). Crucially, the accuracy of the
+synchronised start time across multiple devices is entirely dependent
+on the stability of the LSL clocks.
+
+For this to work reliably all simulated stream clocks must be given
+time to stabilise (ideally a couple of minutes) and there must be a
+specified latency larger than any real-world network latency (default
+0.5 seconds). Any messages that arrive late will print a warning on
+the receiving device. If a simulated stream receives a late message it
+will catch up without dropping samples (by sending a burst of samples
+each with the correct logical timestamp).  Real-time streams will drop
+samples but will send correctly timestamped samples from the point at
+which they receive a late message.
 
 See `lsl-control --help` for all options.
 
