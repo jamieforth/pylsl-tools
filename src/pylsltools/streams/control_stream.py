@@ -100,8 +100,8 @@ class ControlReceiver(MarkerStreamThread):
         try:
             while not self.is_stopped():
                 # Blocking.
-                if self.debug:
-                    print(self.clock_offset - self.inlet.time_correction())
+                # if self.debug:
+                #     print(self.clock_offset - self.inlet.time_correction())
                 message, time_stamp = self.inlet.pull_sample(0.2)
                 if message:
                     print(f'Control {self.name}, time_stamp: {time_stamp}, message: {message}')

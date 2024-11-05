@@ -32,6 +32,7 @@ lsl-monitor = "pylsltools.monitor:main"
 lsl-playback = "pylsltools.playback:main"
 lsl-relay = "pylsltools.relay:main"
 lsl-simulate = "pylsltools.simulate:main"
+lsl-ant-control = "pylsltools.ant_control:main"
 
 [tool.pdm]
 distribution = true
