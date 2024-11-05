@@ -30,6 +30,8 @@ class AntController:
                 # When START, run ant lslserver.
                 if self.state == self.control_states.START:
                     self.launch_ant()
+                if self.state == self.control_states.PAUSE:
+                    self.kill_ant()
                 # When STOP stop this thread.
                 if message['state'] == self.control_states.STOP:
                     self.stop()
@@ -37,10 +39,8 @@ class AntController:
 
     def stop(self):
         print('stop')
+        self.kill_ant()
         self.running = False
-        print('kill ant')
-        self.task.terminate()
-        print('ant terminated')
 
     def launch_ant(self):
         print('start ant')
@@ -51,6 +51,10 @@ class AntController:
             creationflags=subprocess.DETACHED_PROCESS)
         print(f'after start ant {self.task.pid}')
 
+    def kill_ant(self):
+        print('killing ant')
+        self.task.terminate()
+        print('ant terminated')
 
 def main():
     """Control stream."""
