@@ -21,6 +21,9 @@ dependencies = [
 xdf = [
     "pyxdftools @ git+https://github.com/jamieforth/pyxdf-tools.git",
 ]
+osc = [
+    "python-osc>=1.9.0",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/jamieforth/pylsl-tools"
@@ -33,6 +36,7 @@ lsl-playback = "pylsltools.playback:main"
 lsl-relay = "pylsltools.relay:main"
 lsl-simulate = "pylsltools.simulate:main"
 lsl-ant-control = "pylsltools.ant_control:main"
+lsl-osc-control = "pylsltools.osc_control:main"
 
 [tool.pdm]
 distribution = true
