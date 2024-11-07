@@ -33,7 +33,13 @@ class MonitorSender(BaseMarkerStream):
 
         self.outlet = StreamOutlet(info, chunk_size=1, max_buffered=1)
 
-    def send(self, **kwargs):
+    def send(self, text):
+        """Send string."""
+        if self.debug:
+            print(f'{self.name}: {text}')
+        self.outlet.push_sample(text)
+
+    def send_JSON(self, **kwargs):
         """Send key=value pairs as a JSON encoded string."""
         if self.debug:
             print(f'{self.name}: {kwargs}')
@@ -43,7 +49,7 @@ class MonitorSender(BaseMarkerStream):
 class MonitorReceiver(MarkerStreamThread):
 
     def __init__(self, name, content_type, hostname, source_id, *,
-                 send_message_queue=None, debug=False, **kwargs):
+                 send_message_queue=None, json=False, debug=False, **kwargs):
 
         super().__init__(name, content_type, source_id=source_id, **kwargs)
 
@@ -51,6 +57,7 @@ class MonitorReceiver(MarkerStreamThread):
         self.sender_name = name
         self.sender_hostname = hostname
         self.send_message_queue = send_message_queue
+        self.json = json
         self.debug = debug
         self.inlet = None
         self.sample_count = 0
@@ -85,21 +92,26 @@ class MonitorReceiver(MarkerStreamThread):
                     if self.debug:
                         print(f'{self.name}, timestamp: {timestamp}, message: {message}')
                     # Handle message.
-                    message = self.parse_message(message)
-                    self.origin_name = message['name']
+                    if self.json:
+                        message = self.parse_message(message)
+                    else:
+                        message = {'message': message}
+                        # message['sample_diff'] = (message['sample_count']
+                        #                           - self.sample_count)
+                        # message['stream_lost'] = False
+                        # self.origin_name = message['name']
+                        # self.sample_count = message['sample_count']
+                    message['name'] = self.sender_name
+                    message['hostname'] = self.sender_hostname
                     message['source_id'] = self.source_id
-                    message['sample_diff'] = (message['sample_count']
-                                              - self.sample_count)
-                    message['stream_lost'] = False
                     self.send_message_queue.put(message)
-                    self.sample_count = message['sample_count']
         except LostError as exc:
             print(f'{self.name}: {exc}')
-            self.send_message_queue.put({'name': self.origin_name,
-                                         'source_id': self.source_id,
-                                         'sample_count': self.sample_count,
-                                         'sample_diff': 0,
-                                         'stream_lost': True})
+            # self.send_message_queue.put({'name': self.origin_name,
+            #                              'source_id': self.source_id,
+            #                              'sample_count': self.sample_count,
+            #                              'sample_diff': 0,
+            #                              'stream_lost': True})
         finally:
             # Call stop on exiting the main loop to ensure cleanup.
             self.stop()
