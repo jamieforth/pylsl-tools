@@ -49,9 +49,6 @@ class BaseStreamThread(Thread, BaseStream):
         if not self.is_stopped():
             print('Terminating thread...')
             self.stop_event.set()
-            if self.send_message_queue:
-                # Unblock any waiting threads.
-                self.send_message_queue.put('')
 
     def cleanup(self):
         pass
@@ -217,7 +214,6 @@ class BaseMarkerStream(BaseStream):
         # Append custom metadata.
         if manufacturer:
             info.desc().append_child_value('manufacturer', manufacturer)
-
         return info
 
     def parse_message(self, message, time_stamp=None):

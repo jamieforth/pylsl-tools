@@ -1,8 +1,9 @@
+import asyncio
 import json
 import platform
 import queue
-import time
 
+from aioconsole import ainput
 from pylsl import (LostError, StreamInlet, StreamOutlet, local_clock, proc_ALL,
                    resolve_bypred)
 from pylsltools import ControlStates
@@ -17,7 +18,6 @@ class ControlSender(MarkerStreamThread):
     def __init__(self, name, latency=0.5, *, content_type='control',
                  source_id='', manufacturer='pylsltools', debug=False,
                  **kwargs):
-
         # Use host name to identify source if unspecified. If stream is
         # interrupted due to network outage or the controller is
         # restarted receivers should be able to recover.
@@ -36,33 +36,30 @@ class ControlSender(MarkerStreamThread):
                                      self.source_id, self.manufacturer)
 
         self.outlet = StreamOutlet(info, chunk_size=1)
-        try:
-            while not self.is_stopped():
-                state = input('Enter a command: start, pause, stop.\n')
-                if state == 'start':
-                    self.outlet.push_sample([json.dumps(
-                        {'state': self.control_states.START}
-                    )], local_clock() + self.latency)
-                elif state == 'pause':
-                    self.outlet.push_sample([json.dumps(
-                        {'state': self.control_states.PAUSE}
-                    )], local_clock() + self.latency)
-                elif state == 'stop':
-                    self.stop()
-                else:
-                    print(f'Undefined command: {state}')
-        except Exception as exc:
-            self.stop()
-            raise exc
-        print(f'Ended: {self.name}.')
 
-    def stop(self):
-        # Send stop command here in case main thread called stop or
-        # exception raised.
-        self.outlet.push_sample([json.dumps(
-            {'state': self.control_states.STOP}
-        )], local_clock() + self.latency)
-        super().stop()
+        with asyncio.Runner() as runner:
+            # Block here until runner returns.
+            runner.run(self.cli())
+
+    async def cli(self):
+        """REPL interface for sending control messages."""
+        while not self.is_stopped():
+            state = await ainput('Enter a command: start, pause, stop.\n')
+            if state == 'start':
+                self.outlet.push_sample([json.dumps(
+                    {'state': self.control_states.START}
+                )], local_clock() + self.latency)
+            elif state == 'pause':
+                self.outlet.push_sample([json.dumps(
+                    {'state': self.control_states.PAUSE}
+                )], local_clock() + self.latency)
+            elif state == 'stop':
+                self.outlet.push_sample([json.dumps(
+                    {'state': self.control_states.STOP}
+                )], local_clock() + self.latency)
+                self.stop()
+            else:
+                print(f'Undefined command: {state}')
 
 
 class ControlReceiver(MarkerStreamThread):
@@ -70,6 +67,7 @@ class ControlReceiver(MarkerStreamThread):
 
     control_states = ControlStates
     inlet = None
+    messaging_task = None
 
     def __init__(self, name, *, content_type='control',
                  debug=False, **kwargs):
@@ -85,8 +83,10 @@ class ControlReceiver(MarkerStreamThread):
 
     def run(self):
         print('Waiting for control stream.')
+
         sender_info = None
         while not sender_info and not self.is_stopped():
+            # Resolve must run in the same thread as the inlet.
             sender_info = resolve_bypred(f"name='{self.name}'", timeout=0.5)
         if not sender_info:
             return
@@ -96,19 +96,16 @@ class ControlReceiver(MarkerStreamThread):
 
         self.inlet = StreamInlet(sender_info, max_buflen=1, max_chunklen=1,
                                  recover=False, processing_flags=proc_ALL)
-        self.clock_offset = self.inlet.time_correction()
         try:
             while not self.is_stopped():
                 # Blocking.
-                # if self.debug:
-                #     print(self.clock_offset - self.inlet.time_correction())
-                message, time_stamp = self.inlet.pull_sample(0.2)
+                message, time_stamp = self.inlet.pull_sample(1)
                 if message:
                     print(f'Control {self.name}, time_stamp: {time_stamp}, message: {message}')
                     # Handle message.
                     message = self.parse_message(message, time_stamp)
                     # Only notify on state changes.
-                    if message['state'] != self.state:
+                    if message and message['state'] != self.state:
                         # Update current state.
                         self.state = message['state']
                         self.time_stamp = time_stamp
@@ -124,12 +121,10 @@ class ControlReceiver(MarkerStreamThread):
             print(f'Ended: {self.name}.')
 
     def cleanup(self):
-        print('Controller cleanup')
         if self.inlet:
             self.inlet.close_stream()
-        time.sleep(0.2)
 
-    def get_message(self, timeout=None):
+    def get_message(self, timeout=0.2):
         try:
             message = self.send_message_queue.get(timeout=timeout)
             return message
