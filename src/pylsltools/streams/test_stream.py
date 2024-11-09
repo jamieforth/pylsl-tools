@@ -186,13 +186,19 @@ class TestStream (DataStream):
             return sample_idx
         if fn == 'counter+':
             return (sample_idx * self.channel_count) + channel_idx
+        if fn == 'counter-mod-fs':
+            return sample_idx % self.nominal_srate
         if fn == 'impulse':
             if sample_idx % self.nominal_srate == 0:
                 return 1
             else:
                 return 0
         if fn == 'sine':
-            return math.sin((2 * math.pi) * 1 * time)
+            return math.sin((2 * math.pi) * 100 * time)
+        if fn == 'sine+':
+            return math.sin((2 * math.pi) * 100 * (channel_idx + 1) * time)
+        if fn == 'sinemod':
+            return math.sin((2 * math.pi) * (5 + (sample_idx % self.nominal_srate)) * time)
 
     def print(self, name, now, timestamp, elapsed_time, content_type, data):
         print(textwrap.fill(textwrap.dedent(f'''\

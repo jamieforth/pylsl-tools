@@ -54,7 +54,6 @@ class Simulate:
     def start(self, sync, latency, max_time, max_samples, chunk_size,
               max_buffered):
         """Start test streams with a synchronised start time."""
-
         # Start remote control thread if initialised.
         if self.controller:
             self.controller.start()
@@ -207,8 +206,8 @@ def main():
         '--fn',
         nargs='+',
         default=['counter'],
-        choices=['stream-id', 'stream-seq', 'counter', 'counter+', 'impulse',
-                 'sine'],
+        choices=['stream-id', 'stream-seq', 'counter', 'counter+',
+                 'counter-mod-fs', 'impulse', 'sine', 'sine+', 'sinemod'],
         help="""Function(s) to use to simulate channel data. If multiple
         function names are provided they will be recycled to match the
         number of channels.""")
