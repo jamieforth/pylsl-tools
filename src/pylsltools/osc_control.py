@@ -54,7 +54,7 @@ class OscController(ControlSender):
                     unixtime = time.time()
                     lsl_time = local_clock()
                     self.outlet.push_sample([json.dumps(
-                        {'state': self.control_states.START}
+                        {'state': self.control_states.START.name}
                     )], lsl_time + self.latency)
                     bundle = osc_bundle_builder.OscBundleBuilder(
                         unixtime + self.latency)
@@ -67,7 +67,7 @@ class OscController(ControlSender):
                 elif state == 'pause':
                     unixtime = time.time()
                     self.outlet.push_sample([json.dumps(
-                        {'state': self.control_states.PAUSE}
+                        {'state': self.control_states.PAUSE.name}
                     )])
                     bundle = osc_bundle_builder.OscBundleBuilder(
                         unixtime + self.latency)
