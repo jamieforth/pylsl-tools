@@ -207,7 +207,7 @@ def main():
         nargs='+',
         default=['counter'],
         choices=['stream-id', 'stream-seq', 'counter', 'counter+',
-                 'counter-mod-fs', 'impulse', 'sine', 'sine+', 'sinemod'],
+                 'counter-mod-fs', 'impulse', 'sine', 'sine+'],
         help="""Function(s) to use to simulate channel data. If multiple
         function names are provided they will be recycled to match the
         number of channels.""")
