@@ -127,6 +127,8 @@ class TestStream (DataStream):
     def check_continue(self):
         if self.is_stopped():
             return False
+        if not self.check_control_state():
+            return False
         if self.stop_time is not None:
             if self.logical_time >= self.stop_time:
                 if self.debug:
@@ -143,11 +145,11 @@ class TestStream (DataStream):
                 if self.debug:
                     print(f'{self.name} max samples reached.')
                 return False
-        return True and self.check_control_state()
+        return True
 
     def check_control_state(self):
         if self.start_time and self.recv_message_queue.empty():
-            return True
+            pass
         else:
             if self.debug:
                 print(f'{self.name}: waiting for or handling a message')
@@ -158,7 +160,6 @@ class TestStream (DataStream):
             # All time-stamps are in the local timebase.
             if message['state'] == self.control_states.PAUSE:
                 self.stop_time = message['time_stamp']
-                return True
             if message['state'] == self.control_states.START:
                 self.start_time = message['time_stamp']
                 if not self.start_time:
@@ -167,9 +168,9 @@ class TestStream (DataStream):
                     self.start_time = local_clock()
                 # Initialise time values.
                 self.initialise_time(self.start_time)
-                return True
             if message['state'] == self.control_states.STOP:
                 self.stop_time = message['time_stamp']
+        return True
 
     def generate_sample(self, time, sample_idx):
         sample = [self.generate_channel_data(time, sample_idx, channel_idx)
