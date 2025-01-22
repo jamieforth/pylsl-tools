@@ -86,12 +86,7 @@ class RelayStream(DataStream):
 
         if self.output:
             # FIXME: Append desc custom metadata.
-            info = self.make_stream_info(self.name,
-                                         self.content_type,
-                                         self.channel_count,
-                                         self.nominal_srate,
-                                         self.channel_format,
-                                         source_id=self.source_id)
+            info = self.make_stream_info()
             outlet = StreamOutlet(info, self.chunk_size, self.max_buffered)
 
         if self.monitor:

@@ -33,8 +33,7 @@ class ControlSender(MarkerStreamThread):
         self.debug = debug
 
     def run(self):
-        info = self.make_stream_info(self.name, self.content_type,
-                                     self.source_id, self.manufacturer)
+        info = self.make_stream_info()
 
         self.outlet = StreamOutlet(info, chunk_size=1)
 

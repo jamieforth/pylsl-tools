@@ -29,9 +29,7 @@ class MonitorSender(BaseMarkerStream):
 
         # Set class attributes.
         self.debug = debug
-        info = self.make_stream_info(name, content_type, source_id,
-                                     manufacturer)
-
+        info = self.make_stream_info()
         self.outlet = StreamOutlet(info, chunk_size=1, max_buffered=1)
 
     def send(self, text):

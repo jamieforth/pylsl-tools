@@ -74,14 +74,7 @@ class TestStream (DataStream):
 
     def run(self):
         delta = 1 / self.nominal_srate
-        info = self.make_stream_info(self.name, self.content_type,
-                                     self.channel_count, self.nominal_srate,
-                                     self.channel_format,
-                                     source_id=self.source_id,
-                                     manufacturer=self.manufacturer,
-                                     channel_labels=self.channel_labels,
-                                     channel_types=self.channel_types,
-                                     channel_units=self.channel_units)
+        info = self.make_stream_info()
         if self.debug:
             print(info.as_xml())
 
