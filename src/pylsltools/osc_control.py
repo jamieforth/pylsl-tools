@@ -26,22 +26,23 @@ class OscController(ControlSender):
         self.sclang_port = sclang_port
         self.stop_event = Event()
 
-    def counter(self, start_time, sf, stop_event, latency):
-        logical_time = start_time
+    def counter(self, start_time_lsl, sf, stop_event, latency):
+        logical_time = start_time_lsl
         elapsed_time = 0 - latency
         delta = 1 / sf
         while not stop_event.is_set():
-            elapsed_time = logical_time - start_time
+            elapsed_time = logical_time - start_time_lsl
             print(elapsed_time)
             self.outlet.push_sample([json.dumps(
-                {'seconds': logical_time}
+                {'seconds': elapsed_time}
             )])
             logical_time = logical_time + delta
-            delay = logical_time - (local_clock() + latency)
+            delay = logical_time - local_clock()
             if delay > 0:
                 time.sleep(delay)
 
     def run(self):
+        # FIXME: Should have had a sample rate and latency metadata.
         info = self.make_stream_info(self.name, self.content_type,
                                      self.source_id, self.manufacturer)
 
@@ -74,9 +75,9 @@ class OscController(ControlSender):
                     msg = osc_message_builder.OscMessageBuilder(address=f'/lsl/record/pause')
                     bundle.add_content(msg.build())
                     sclang.send(bundle.build())
-
                 elif state == 'stop':
                     unixtime = time.time()
+                    # FIXME: Not sending actual LSL stop time!
                     bundle = osc_bundle_builder.OscBundleBuilder(
                         unixtime + self.latency)
                     msg = osc_message_builder.OscMessageBuilder(address=f'/lsl/record/stop')
