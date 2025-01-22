@@ -7,7 +7,8 @@ import json
 import os
 import time
 
-from pylsl import LostError, StreamInlet, StreamOutlet, resolve_bypred
+from pylsl import StreamInlet, StreamOutlet, resolve_bypred
+from pylsl.util import LostError
 from pylsltools.streams import BaseMarkerStream, MarkerStreamThread
 
 

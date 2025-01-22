@@ -1,7 +1,8 @@
 import queue
 
-from pylsl import (LostError, StreamInlet, StreamOutlet, local_clock, proc_ALL,
+from pylsl import (StreamInlet, StreamOutlet, local_clock, proc_ALL,
                    resolve_bypred)
+from pylsl.util import LostError
 from pylsltools import ControlStates
 from pylsltools.streams import MarkerStreamThread
 

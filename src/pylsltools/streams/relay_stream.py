@@ -9,8 +9,8 @@ import os
 import textwrap
 import time
 
-from pylsl import (LostError, StreamInlet, StreamOutlet, local_clock,
-                   resolve_bypred)
+from pylsl import (StreamInlet, StreamOutlet, local_clock, resolve_bypred)
+from pylsl.util import LostError
 from pylsltools import ControlStates
 from pylsltools.streams import DataStream, MonitorSender
 

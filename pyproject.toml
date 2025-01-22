@@ -14,7 +14,7 @@ requires-python = "==3.11.*"
 license = {text = "AGPL-3.0-or-later"}
 
 dependencies = [
-    "pylsl",
+    "pylsl>=1.17.6",
     "aioconsole>=0.8.1",
 ]
 
