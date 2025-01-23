@@ -8,7 +8,7 @@ import threading
 from pylsl import local_clock
 
 from pylsltools import ControlStates
-from pylsltools.streams import ControlReceiver, TestStream
+from pylsltools.streams import ControlReceiver, TestDataStream, TestMarkerStream
 
 
 class Simulate:
@@ -17,14 +17,26 @@ class Simulate:
     controller = None
     control_states = ControlStates
 
-    def __init__(self, num_streams, functions, name, content_type,
-                 channel_count, nominal_srate, channel_format, source_id,
-                 channel_labels=None, channel_types=None, channel_units=None,
-                 control_name=None, debug=False):
+    def __init__(
+        self,
+        num_streams,
+        functions,
+        name,
+        content_type,
+        marker_stream,
+        channel_count,
+        nominal_srate,
+        channel_format,
+        source_id,
+        channel_labels=None,
+        channel_types=None,
+        channel_units=None,
+        control_name=None,
+        debug=False,
+    ):
         """Initialise simulation test.
 
-        Optionally can receive messages from an input LSL control
-        stream.
+        Optionally can receive messages from an input LSL control stream.
         """
         # Event to terminate the main process.
         self.stop_event = threading.Event()
@@ -34,6 +46,7 @@ class Simulate:
         self.functions = functions
         self.name = name
         self.content_type = content_type
+        self.marker_stream = marker_stream
         self.channel_count = channel_count
         self.nominal_srate = nominal_srate
         self.channel_format = channel_format
@@ -47,39 +60,49 @@ class Simulate:
         self.recv_message_queue = mp.SimpleQueue()
         # For receiving messages from a controller stream.
         if control_name:
-            self.controller = ControlReceiver(control_name,
-                                              debug=debug)
+            self.controller = ControlReceiver(control_name, debug=debug)
         self.debug = debug
 
-    def start(self, sync, latency, max_time, max_samples, chunk_size,
-              max_buffered):
+    def start(self, sync, latency, max_time, max_samples, chunk_size, max_buffered):
         """Start test streams with a synchronised start time."""
         # Start remote control thread if initialised.
         if self.controller:
             self.controller.start()
 
+        if self.marker_stream:
+            stream_class = TestMarkerStream
+        else:
+            stream_class = TestDataStream
+
         # Create sub-processes.
-        streams = [TestStream(stream_idx, self.functions, self.name,
-                              self.content_type, self.channel_count,
-                              self.nominal_srate, self.channel_format,
-                              source_id=self.source_id,
-                              channel_labels=self.channel_labels,
-                              channel_types=self.channel_types,
-                              channel_units=self.channel_units,
-                              latency=latency,
-                              max_time=max_time,
-                              max_samples=max_samples,
-                              chunk_size=chunk_size,
-                              max_buffered=max_buffered,
-                              # Each sub-process has a unique
-                              # recv_message queue.
-                              recv_message_queue=mp.SimpleQueue(),
-                              # Each sub-process shares the same queue
-                              # for sending message to the main process.
-                              send_message_queue=self.recv_message_queue,
-                              barrier=self.barrier,
-                              debug=self.debug)
-                   for stream_idx in range(self.num_streams)]
+        streams = [
+            stream_class(
+                stream_idx,
+                self.functions,
+                self.name,
+                self.content_type,
+                self.channel_count,
+                self.nominal_srate,
+                channel_format=self.channel_format,
+                source_id=self.source_id,
+                channel_labels=self.channel_labels,
+                channel_types=self.channel_types,
+                channel_units=self.channel_units,
+                latency=latency,
+                max_time=max_time,
+                max_samples=max_samples,
+                chunk_size=chunk_size,
+                max_buffered=max_buffered,
+                # Each sub-process has a unique recv_message queue.
+                recv_message_queue=mp.SimpleQueue(),
+                # Each sub-process shares the same queue for sending message to the
+                # main process.
+                send_message_queue=self.recv_message_queue,
+                barrier=self.barrier,
+                debug=self.debug,
+            )
+            for stream_idx in range(self.num_streams)
+        ]
 
         self.streams = streams
 
@@ -94,8 +117,9 @@ class Simulate:
                 start_time = local_clock()
             else:
                 start_time = None
-            self.send_message_to_streams({'state': self.control_states.START,
-                                          'time_stamp': start_time})
+            self.send_message_to_streams(
+                {"state": self.control_states.START, "time_stamp": start_time}
+            )
 
         # Use asyncio to handle asynchronous messages in the main thread.
         with asyncio.Runner() as runner:
@@ -117,7 +141,7 @@ class Simulate:
                 if self.controller:
                     tg.create_task(self.recv_from_controller())
         finally:
-            print('End handle messages.')
+            print("End handle messages.")
 
     def send_message_to_streams(self, message):
         for stream in self.streams:
@@ -128,31 +152,33 @@ class Simulate:
         """Coroutine to handle messages from sub-processes."""
         try:
             while not self.streams_stopped(self.streams) or (
-                    not self.recv_message_queue.empty()):
+                not self.recv_message_queue.empty()
+            ):
                 # Block here until message received.
                 message = await asyncio.to_thread(self.recv_message_queue.get)
                 if self.debug and message:
-                    print(f'{__class__} sub-process message: {message}')
+                    print(f"{__class__} sub-process message: {message}")
         finally:
             if self.debug:
-                print('End stream messaging.')
+                print("End stream messaging.")
             self.stop()
 
     async def recv_from_controller(self):
         """Coroutine to handle controller messages."""
         try:
             while not self.controller.is_stopped() or (
-                    not self.controller.send_message_queue.empty()):
+                not self.controller.send_message_queue.empty()
+            ):
                 # Loop here waiting for messages.
                 # Blocking.
                 message = await asyncio.to_thread(self.controller.get_message)
                 if self.debug and message:
-                    print(f'{self.__class__} controller message: {message}')
+                    print(f"{self.__class__} controller message: {message}")
                 if message:
                     self.send_message_to_streams(message)
         finally:
             if self.debug:
-                print('End controller messaging.')
+                print("End controller messaging.")
             self.stop()
 
     def streams_stopped(self, streams):
@@ -177,124 +203,149 @@ class Simulate:
     def is_stopped(self):
         return self.stop_event.is_set()
 
+
 def main():
     """Generate synthetic LSL streams."""
     import multiprocessing
-    multiprocessing.set_start_method('spawn')
 
-    parser = argparse.ArgumentParser(description="""Create test LSL data
-    streams using synthetic data.""")
+    multiprocessing.set_start_method("spawn")
+
+    parser = argparse.ArgumentParser(
+        description="""Create test LSL data
+    streams using synthetic data."""
+    )
     parser.add_argument(
-        '-n',
-        '--num-streams',
+        "-n",
+        "--num-streams",
         default=1,
         type=int,
-        help='Number of streams to simulate.')
+        help="Number of streams to simulate.",
+    )
     parser.add_argument(
-        '-c',
-        '--num-channels',
+        "-c",
+        "--num-channels",
         default=30,
         type=int,
-        help='Number of channels per stream.')
+        help="Number of channels per stream.",
+    )
     parser.add_argument(
-        '-s',
-        '--sample-rate',
+        "-s",
+        "--sample-rate",
         default=500,
         type=int,
-        help='Synthetic data stream sample rate.')
+        help="Synthetic data stream sample rate.",
+    )
     parser.add_argument(
-        '--fn',
-        nargs='+',
-        default=['counter'],
-        choices=['stream-id', 'stream-seq', 'counter', 'counter+',
-                 'counter-mod-fs', 'impulse', 'sine', 'sine+'],
+        "--fn",
+        nargs="+",
+        default=["counter"],
+        choices=[
+            "stream-id",
+            "stream-seq",
+            "counter",
+            "counter+",
+            "counter-mod-fs",
+            "impulse",
+            "sine",
+            "sine+",
+        ],
         help="""Function(s) to use to simulate channel data. If multiple
         function names are provided they will be recycled to match the
-        number of channels.""")
+        number of channels.""",
+    )
     parser.add_argument(
-        '--name',
-        help='Additional identifier to append to stream name.')
+        "--name", help="Additional identifier to append to stream name."
+    )
     parser.add_argument(
-        '--content-type',
-        default='data',
-        help='Content type: e.g. `eeg`.')
+        "--content-type", default="data", help="Content type: e.g. `eeg`."
+    )
     parser.add_argument(
-        '--channel-format',
-        default='float32',
-        choices=['float32', 'double64', 'string', 'int64', 'int32', 'int16',
-                 'int8'],
-        help='Channel datatype.')
+        "--marker",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Generate a marker stream.",
+    )
     parser.add_argument(
-        '--source-id',
-        default='',
-        help='Unique identifier for stream source.')
+        "--channel-format",
+        default="float32",
+        choices=["float32", "double64", "string", "int64", "int32", "int16", "int8"],
+        help="Channel datatype.",
+    )
     parser.add_argument(
-        '-t',
-        '--channel-type',
-        default='misc',
-        help='Synthetic data channel type.')
+        "--source-id", default="", help="Unique identifier for stream source."
+    )
     parser.add_argument(
-        '--channel-unit',
-        help='Synthetic data channel unit.')
+        "-t", "--channel-type", default="misc", help="Synthetic data channel type."
+    )
+    parser.add_argument("--channel-unit", help="Synthetic data channel unit.")
     parser.add_argument(
-        '--max-time',
-        type=float,
-        help='Maximum run-time for test streams.')
+        "--max-time", type=float, help="Maximum run-time for test streams."
+    )
     parser.add_argument(
-        '--max-samples',
+        "--max-samples",
         type=int,
         help="""Maximum number of samples to generate by each test
-        stream.""")
+        stream.""",
+    )
     parser.add_argument(
-        '--chunk-size',
+        "--chunk-size",
         type=int,
         default=0,
         help="""Desired outlet chunk size in samples. Inlets can
-        override this.""")
+        override this.""",
+    )
     parser.add_argument(
-        '--max-buffered',
+        "--max-buffered",
         type=int,
         default=360,
         help="""Maximum amount of data to buffer - in seconds if there is
-        a nominal sampling rate, otherwise x100 in samples.""")
+        a nominal sampling rate, otherwise x100 in samples.""",
+    )
+    parser.add_argument("--control-name", help="Control stream name.")
     parser.add_argument(
-        '--control-name',
-        help='Control stream name.')
-    parser.add_argument(
-        '--sync',
+        "--sync",
         default=True,
         action=argparse.BooleanOptionalAction,
-        help='Synchronise timestamps across all streams.')
+        help="Synchronise timestamps across all streams.",
+    )
     parser.add_argument(
-        '--latency',
-        type=float,
-        default=0.2,
-        help='Scheduling latency in seconds.')
+        "--latency", type=float, default=0.2, help="Scheduling latency in seconds."
+    )
     parser.add_argument(
-        '--debug',
-        action='store_true',
-        help='Print extra debugging information.')
+        "--debug", action="store_true", help="Print extra debugging information."
+    )
     args = parser.parse_args()
-    simulate = Simulate(args.num_streams, args.fn, args.name,
-                        args.content_type, args.num_channels, args.sample_rate,
-                        args.channel_format, args.source_id,
-                        channel_types=args.channel_type,
-                        channel_units=args.channel_unit,
-                        control_name=args.control_name,
-                        debug=args.debug)
+
+    simulate = Simulate(
+        args.num_streams,
+        args.fn,
+        args.name,
+        args.content_type,
+        args.marker,
+        args.num_channels,
+        args.sample_rate,
+        args.channel_format,
+        args.source_id,
+        channel_types=args.channel_type,
+        channel_units=args.channel_unit,
+        control_name=args.control_name,
+        debug=args.debug,
+    )
     try:
-        simulate.start(args.sync,
-                       args.latency,
-                       max_time=args.max_time,
-                       max_samples=args.max_samples,
-                       chunk_size=args.chunk_size,
-                       max_buffered=args.max_buffered)
+        simulate.start(
+            args.sync,
+            args.latency,
+            max_time=args.max_time,
+            max_samples=args.max_samples,
+            chunk_size=args.chunk_size,
+            max_buffered=args.max_buffered,
+        )
     except Exception as exc:
         # Stop all streams if one raises an error.
         simulate.stop()
         raise exc
     except KeyboardInterrupt:
-        print('Stopping main.')
+        print("Stopping main.")
         simulate.stop()
     finally:
-        print('Main exit.')
+        print("Main exit.")
