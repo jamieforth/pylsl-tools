@@ -1,8 +1,8 @@
 import queue
 
-from pylsl import (StreamInlet, StreamOutlet, local_clock, proc_ALL,
-                   resolve_bypred)
+from pylsl import StreamInlet, proc_ALL, resolve_bypred
 from pylsl.util import LostError
+
 from pylsltools import ControlStates
 from pylsltools.streams import MarkerStreamThread
 
@@ -14,8 +14,7 @@ class ControlReceiver(MarkerStreamThread):
     inlet = None
     messaging_task = None
 
-    def __init__(self, name, *, content_type='control',
-                 debug=False, **kwargs):
+    def __init__(self, name, *, content_type="control", debug=False, **kwargs):
         super().__init__(name, content_type, **kwargs)
 
         # Set class attributes.
@@ -27,7 +26,7 @@ class ControlReceiver(MarkerStreamThread):
         self.clock_offset = None
 
     def run(self):
-        print('Waiting for control stream.')
+        print("Waiting for control stream.")
 
         sender_info = None
         while not sender_info and not self.is_stopped():
@@ -37,33 +36,40 @@ class ControlReceiver(MarkerStreamThread):
             return
         sender_info = sender_info[0]
 
-        print(f'Found control stream: {sender_info.name()}.')
+        print(f"Found control stream: {sender_info.name()}.")
 
-        self.inlet = StreamInlet(sender_info, max_buflen=1, max_chunklen=1,
-                                 recover=False, processing_flags=proc_ALL)
+        self.inlet = StreamInlet(
+            sender_info,
+            max_buflen=1,
+            max_chunklen=1,
+            recover=False,
+            processing_flags=proc_ALL,
+        )
         try:
             while not self.is_stopped():
                 # Blocking.
                 message, time_stamp = self.inlet.pull_sample(1)
                 if message:
-                    print(f'Control {self.name}, time_stamp: {time_stamp}, message: {message}')
+                    print(
+                        f"Control {self.name}, time_stamp: {time_stamp}, message: {message}"
+                    )
                     # Handle message.
                     message = self.parse_message(message, time_stamp)
                     # Only notify on state changes.
-                    if message and message['state'] != self.state:
+                    if message and message["state"] != self.state:
                         # Update current state.
-                        self.state = message['state']
+                        self.state = message["state"]
                         self.time_stamp = time_stamp
                         self.send_message_queue.put(message)
                         # When STOP stop this thread.
-                        if message['state'] == self.control_states.STOP:
+                        if message["state"] == self.control_states.STOP:
                             self.stop()
         except LostError as exc:
-            print(f'{self.name}: {exc}')
+            print(f"{self.name}: {exc}")
         finally:
             self.stop()
             self.cleanup()
-            print(f'Ended: {self.name}.')
+            print(f"Ended: {self.name}.")
 
     def cleanup(self):
         if self.inlet:

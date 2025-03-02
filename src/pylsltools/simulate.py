@@ -95,8 +95,8 @@ class Simulate:
                 max_buffered=max_buffered,
                 # Each sub-process has a unique recv_message queue.
                 recv_message_queue=mp.SimpleQueue(),
-                # Each sub-process shares the same queue for sending message to the
-                # main process.
+                # Each sub-process shares the same queue for sending message to
+                # the main process.
                 send_message_queue=self.recv_message_queue,
                 barrier=self.barrier,
                 debug=self.debug,
