@@ -209,7 +209,7 @@ class BaseTestStream:
         if fn == "sine":
             return math.sin((2 * math.pi) * time)  # 1 Hz
         if fn == "sine+":
-            return math.sin((2 * math.pi) * max(channel_idx * 10, 1) * time)
+            return math.sin((2 * math.pi) * 2**channel_idx * time)
 
     def print(self, name, now, timestamp, elapsed_time, content_type, data):
         print(
