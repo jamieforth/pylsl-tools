@@ -1,29 +1,23 @@
-[build-system]
-requires = ["setuptools>=61", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "pylsltools"
 version = "0.1.0"
-authors = [
-    {name="Jamie Forth", email="j.forth@gold.ac.uk"},
-]
 description = "Tools for working with LSL data streams."
 readme = "README.md"
-requires-python = ">=3.11"
+authors = [
+    { name = "Jamie Forth", email = "j.forth@gold.ac.uk" }
+]
 license = {text = "AGPL-3.0-or-later"}
-
+requires-python = ">=3.11"
 dependencies = [
     "pylsl>=1.17.6",
-    "aioconsole>=0.8.1",
 ]
 
 [project.optional-dependencies]
-xdf = [
-    "pyxdftools @ git+https://github.com/jamieforth/pyxdf-tools.git",
-]
 osc = [
-    "python-osc>=1.9.0",
+    "python-osc>=1.9.3",
+]
+repl = [
+    "aioconsole>=0.8.1",
 ]
 
 [project.urls]
@@ -39,11 +33,13 @@ lsl-simulate = "pylsltools.simulate:main"
 lsl-ant-control = "pylsltools.ant_control:main"
 lsl-osc-control = "pylsltools.osc_control:main"
 
-[tool.pdm]
-distribution = true
-
 [dependency-groups]
 dev = [
-    "python-lsp-server[all]>=1.12.0",
-    "ruff>=0.9.2",
+    "pytest>=8.3.4",
+    "python-lsp-server>=1.12.2",
+    "ruff>=0.9.9",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
