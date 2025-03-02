@@ -88,7 +88,6 @@ class Simulate:
                 channel_labels=self.channel_labels,
                 channel_types=self.channel_types,
                 channel_units=self.channel_units,
-                latency=latency,
                 max_time=max_time,
                 max_samples=max_samples,
                 chunk_size=chunk_size,
@@ -114,11 +113,15 @@ class Simulate:
         if not self.controller:
             if sync:
                 # Get start time in the main thread to synchronise streams.
-                start_time = local_clock()
+                start_time = local_clock() + latency
             else:
                 start_time = None
             self.send_message_to_streams(
-                {"state": self.control_states.START, "time_stamp": start_time}
+                {
+                    "state": self.control_states.START,
+                    "time_stamp": start_time,
+                    "latency": latency,
+                }
             )
 
         # Use asyncio to handle asynchronous messages in the main thread.

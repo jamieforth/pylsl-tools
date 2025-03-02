@@ -54,7 +54,14 @@ class ControlSender(MarkerStreamThread):
             state = await ainput("Enter a command: start, pause, stop.\n")
             if state == "start":
                 self.outlet.push_sample(
-                    [json.dumps({"state": self.control_states.START})],
+                    [
+                        json.dumps(
+                            {
+                                "state": self.control_states.START,
+                                "latency": self.latency,
+                            }
+                        )
+                    ],
                     local_clock() + self.latency,
                 )
             elif state == "pause":

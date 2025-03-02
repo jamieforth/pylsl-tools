@@ -31,7 +31,6 @@ class BaseTestStream:
         name,
         *,
         source_id=None,
-        latency=None,
         max_time=None,
         max_samples=None,
         chunk_size=None,
@@ -69,7 +68,6 @@ class BaseTestStream:
         self.functions = functions
         self.start_time = None
         self.stop_time = None
-        self.latency = latency
         self.max_time = max_time
         self.max_samples = max_samples
         self.chunk_size = chunk_size
@@ -90,22 +88,23 @@ class BaseTestStream:
 
         try:
             while self.check_continue():
-                self.elapsed_time = self.logical_time - self.start_time
-                sample = self.generate_sample(self.elapsed_time, self.sample_count)
-                outlet.push_sample(sample, timestamp=self.logical_time)
-                if self.debug and (
-                    self.nominal_srate <= 5
-                    or (self.sample_count % self.nominal_srate) == 0
-                ):
-                    self.print(
-                        self.name,
-                        local_clock(),
-                        self.logical_time,
-                        self.elapsed_time,
-                        self.content_type,
-                        sample,
-                    )
-                self.sample_count = self.sample_count + 1
+                if self.start_time:
+                    self.elapsed_time = self.logical_time - self.start_time
+                    sample = self.generate_sample(self.elapsed_time, self.sample_count)
+                    outlet.push_sample(sample, timestamp=self.logical_time)
+                    if self.debug and (
+                        self.nominal_srate <= 5
+                        or (self.sample_count % self.nominal_srate) == 0
+                    ):
+                        self.print(
+                            self.name,
+                            local_clock(),
+                            self.logical_time,
+                            self.elapsed_time,
+                            self.content_type,
+                            sample,
+                        )
+                    self.sample_count = self.sample_count + 1
                 self.logical_time = self.logical_time + self.delta
                 # Avoid drift.
                 delay = self.logical_time - (local_clock() + self.latency)
@@ -123,11 +122,12 @@ class BaseTestStream:
             self.cleanup()
             print(f"Ended: {self.name}.")
 
-    def initialise_time(self, start_time):
+    def initialise_time(self, start_time, latency):
         # Generate data slightly ahead of time to give all sub-processes time
         # to run.
-        self.start_time = start_time + self.latency
-        self.logical_time = self.start_time
+        self.latency = latency
+        self.start_time = start_time
+        self.logical_time = start_time
         self.elapsed_time = 0
 
     def check_continue(self):
@@ -169,13 +169,14 @@ class BaseTestStream:
             if message["state"] == self.control_states.PAUSE:
                 self.stop_time = message["time_stamp"]
             if message["state"] == self.control_states.START:
-                self.start_time = message["time_stamp"]
-                if not self.start_time:
+                start_time = message["time_stamp"]
+                latency = message["latency"]
+                if not start_time:
                     # Non-synchronised timestamps: Use local real-time of
                     # this process.
-                    self.start_time = local_clock()
+                    start_time = local_clock()
                 # Initialise time values.
-                self.initialise_time(self.start_time)
+                self.initialise_time(start_time, latency)
             if message["state"] == self.control_states.STOP:
                 self.stop_time = message["time_stamp"]
         return True
@@ -242,7 +243,6 @@ class TestDataStream(BaseTestStream, DataStream):
         channel_labels=None,
         channel_types=None,
         channel_units=None,
-        latency=None,
         max_time=None,
         max_samples=None,
         chunk_size=None,
@@ -269,7 +269,6 @@ class TestDataStream(BaseTestStream, DataStream):
             channel_labels=channel_labels,
             channel_types=channel_types,
             channel_units=channel_units,
-            latency=latency,
             max_time=max_time,
             max_samples=max_samples,
             chunk_size=chunk_size,
@@ -294,7 +293,6 @@ class TestMarkerStream(BaseTestStream, MarkerStreamProcess):
         *,
         source_id=None,
         channel_labels=None,
-        latency=None,
         max_time=None,
         max_samples=None,
         chunk_size=None,
@@ -317,7 +315,6 @@ class TestMarkerStream(BaseTestStream, MarkerStreamProcess):
             channel_count=channel_count,
             source_id=source_id,
             channel_labels=channel_labels,
-            latency=latency,
             max_time=max_time,
             max_samples=max_samples,
             chunk_size=chunk_size,
