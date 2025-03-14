@@ -36,7 +36,7 @@ class BaseStream:
         self.channel_format = channel_format
         self.source_id = source_id
         self.manufacturer = manufacturer
-        self.channel_labels = self.check_channel_labels(channel_labels, channel_count)
+        self.channel_labels = check_channel_labels(channel_labels, channel_count)
 
     def make_stream_info(self):
         """Return a pylsl StreamInfo object.
@@ -61,15 +61,6 @@ class BaseStream:
                 ch = channels.append_child("channel")
                 ch.append_child_value("label", self.channel_labels[i])
         return info
-
-    def check_channel_labels(self, channel_labels, channel_count):
-        if isinstance(channel_labels, list):
-            if len(channel_labels) != channel_count:
-                print(
-                    f"{channel_count} channel labels required, {len(channel_labels)} provided."
-                )
-                channel_labels = None
-        return channel_labels
 
 
 class BaseStreamThread(BaseStream, Thread):
@@ -169,7 +160,7 @@ class DataStream(BaseStreamProcess):
     ):
         # Create default labels.
         if channel_labels is None:
-            channel_labels = self.make_channel_labels(channel_count)
+            channel_labels = make_channel_labels(channel_count)
 
         super().__init__(
             name,
@@ -186,32 +177,8 @@ class DataStream(BaseStreamProcess):
         )
 
         # Set class attributes.
-        self.channel_types = self.check_channel_types(channel_types, channel_count)
-        self.channel_units = self.check_channel_units(channel_units, channel_count)
-
-    def make_channel_labels(self, channel_count):
-        return [f"ch:{channel_idx:0=2d}" for channel_idx in range(channel_count)]
-
-    def check_channel_types(self, channel_types, channel_count):
-        if isinstance(channel_types, list):
-            if len(channel_types) != channel_count:
-                print(
-                    f"{channel_count} channel types required, {len(channel_types)} provided."
-                )
-        if isinstance(channel_types, str):
-            channel_types = [channel_types] * channel_count
-        return channel_types
-
-    def check_channel_units(self, channel_units, channel_count):
-        if isinstance(channel_units, list):
-            if len(channel_units) != channel_count:
-                print(
-                    f"{channel_count} channel units required, {len(channel_units)} provided."
-                )
-                channel_units = None
-        if isinstance(channel_units, str):
-            channel_units = [channel_units] * channel_count
-        return channel_units
+        self.channel_types = check_channel_types(channel_types, channel_count)
+        self.channel_units = check_channel_units(channel_units, channel_count)
 
     def make_stream_info(self):
         info = BaseStream.make_stream_info(self)
@@ -219,7 +186,6 @@ class DataStream(BaseStreamProcess):
             channels = info.desc().child("channels")
             ch = channels.first_child()
             for i in range(self.channel_count):
-                print(ch.name())
                 if self.channel_types:
                     ch.append_child_value("type", self.channel_types[i])
                 if self.channel_units:
@@ -240,19 +206,16 @@ class BaseMarkerStream(BaseStream):
         source_id="",
         manufacturer="pylsltools",
         channel_labels=None,
+        channel_types=None,
         **kwargs,
     ):
+        # Create default labels.
+        if channel_labels is None:
+            channel_labels = make_channel_labels(channel_count)
+
+        # Set marker stream specific properties.
         nominal_srate = IRREGULAR_RATE
         channel_format = "string"
-
-        if "nominal_srate" in kwargs:
-            del kwargs["nominal_srate"]
-        if "channel_format" in kwargs:
-            del kwargs["channel_format"]
-        if "channel_types" in kwargs:
-            del kwargs["channel_types"]
-        if "channel_units" in kwargs:
-            del kwargs["channel_units"]
 
         super().__init__(
             name,
@@ -265,6 +228,20 @@ class BaseMarkerStream(BaseStream):
             channel_labels=channel_labels,
             **kwargs,
         )
+
+        # Set class attributes.
+        self.channel_types = check_channel_types(channel_types, channel_count)
+
+    def make_stream_info(self):
+        info = BaseStream.make_stream_info(self)
+        if self.channel_labels:
+            channels = info.desc().child("channels")
+            ch = channels.first_child()
+            for i in range(self.channel_count):
+                if self.channel_types:
+                    ch.append_child_value("type", self.channel_types[i])
+                ch = ch.next_sibling("channel")
+        return info
 
     def parse_message(self, message, time_stamp=None, channel=0):
         message = message[channel]
@@ -284,22 +261,11 @@ class MarkerStreamThread(BaseMarkerStream, BaseStreamThread):
         self,
         name,
         content_type,
-        *,
-        channel_count=1,
-        channel_labels=None,
-        source_id="",
-        manufacturer="pylsltools",
-        send_message_queue=None,
         **kwargs,
     ):
         super().__init__(
             name,
             content_type,
-            channel_count=channel_count,
-            channel_labels=channel_labels,
-            source_id=source_id,
-            manufacturer=manufacturer,
-            send_message_queue=send_message_queue,
             **kwargs,
         )
 
@@ -311,23 +277,50 @@ class MarkerStreamProcess(BaseMarkerStream, BaseStreamProcess):
         self,
         name,
         content_type,
-        *,
-        channel_count=1,
-        channel_labels=None,
-        source_id="",
-        manufacturer="pylsltools",
-        recv_message_queue=None,
-        send_message_queue=None,
         **kwargs,
     ):
         super().__init__(
             name,
             content_type,
-            channel_count=channel_count,
-            channel_labels=channel_labels,
-            source_id=source_id,
-            manufacturer=manufacturer,
-            recv_message_queue=recv_message_queue,
-            send_message_queue=send_message_queue,
             **kwargs,
         )
+
+
+# Helper functions
+
+
+def make_channel_labels(channel_count):
+    return [f"ch:{channel_idx:0=2d}" for channel_idx in range(channel_count)]
+
+
+def check_channel_labels(channel_labels, channel_count):
+    if isinstance(channel_labels, list):
+        if len(channel_labels) != channel_count:
+            print(
+                f"{channel_count} channel labels required, {len(channel_labels)} provided."
+            )
+            channel_labels = None
+    return channel_labels
+
+
+def check_channel_types(channel_types, channel_count):
+    if isinstance(channel_types, list):
+        if len(channel_types) != channel_count:
+            print(
+                f"{channel_count} channel types required, {len(channel_types)} provided."
+            )
+    if isinstance(channel_types, str):
+        channel_types = [channel_types] * channel_count
+    return channel_types
+
+
+def check_channel_units(channel_units, channel_count):
+    if isinstance(channel_units, list):
+        if len(channel_units) != channel_count:
+            print(
+                f"{channel_count} channel units required, {len(channel_units)} provided."
+            )
+            channel_units = None
+    if isinstance(channel_units, str):
+        channel_units = [channel_units] * channel_count
+    return channel_units

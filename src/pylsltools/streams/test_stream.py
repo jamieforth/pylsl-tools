@@ -14,12 +14,11 @@ from pylsltools.streams import DataStream, MarkerStreamProcess
 class BaseTestStream:
     """Test stream to generate deterministic streams of data.
 
-    Each stream runs in it's own sub-process. Data is generated
-    sample-by-sample so it is not the most efficient implementation but if
-    performance becomes problematic latency can be increased to give each
-    process time to generate data. However, timestamps are set according to
-    logical time, so even if data is sent late is should still be timestamped
-    correctly.
+    Each stream runs in its own sub-process. Data is generated sample-by-sample
+    so it is not the most efficient implementation but if performance becomes
+    problematic latency can be increased to give each process time to generate
+    data. However, timestamps are set according to logical time, so even if
+    data is sent late is should still be timestamped correctly.
     """
 
     control_states = ControlStates
@@ -29,6 +28,7 @@ class BaseTestStream:
         stream_idx,
         functions,
         name,
+        channel_count,
         *,
         source_id=None,
         max_time=None,
@@ -39,10 +39,9 @@ class BaseTestStream:
         debug=False,
         **kwargs,
     ):
-        if name:
-            name = f"{name} test stream {stream_idx} {' '.join(g for g in functions)}"
-        else:
-            name = f"Test stream {stream_idx} {' '.join(g for g in functions)}"
+        # Initialise channel types based on generator functions.
+        channel_types = make_channel_types(functions, channel_count)
+
         # If no source_id is provided default to script name and PID to
         # identify the source. In the default case if a stream is interrupted
         # due to network outage consumers should be able to automatically
@@ -55,6 +54,8 @@ class BaseTestStream:
 
         super().__init__(
             name,
+            channel_count=channel_count,
+            channel_types=channel_types,
             source_id=source_id,
             **kwargs,
         )
@@ -190,7 +191,7 @@ class BaseTestStream:
         return sample
 
     def generate_channel_data(self, time, sample_idx, channel_idx):
-        fn = self.functions[channel_idx % len(self.functions)]
+        fn = self.functions[min(channel_idx, len(self.functions) - 1)]
         if fn == "stream-id":
             return self.stream_idx
         if fn == "stream-seq":
@@ -240,9 +241,6 @@ class TestDataStream(BaseTestStream, DataStream):
         *,
         channel_format,
         source_id=None,
-        channel_labels=None,
-        channel_types=None,
-        channel_units=None,
         max_time=None,
         max_samples=None,
         chunk_size=None,
@@ -254,8 +252,15 @@ class TestDataStream(BaseTestStream, DataStream):
         **kwargs,
     ):
         # Set class attributes.
-        self.delta = 1 / nominal_srate
+        if name:
+            name = (
+                f"{name} test data stream {stream_idx} {' '.join(g for g in functions)}"
+            )
+        else:
+            name = f"Test data stream {stream_idx} {' '.join(g for g in functions)}"
+
         self.dtype = channel_format
+        self.delta = 1 / nominal_srate
 
         super().__init__(
             stream_idx,
@@ -266,9 +271,6 @@ class TestDataStream(BaseTestStream, DataStream):
             nominal_srate=nominal_srate,
             channel_format=channel_format,
             source_id=source_id,
-            channel_labels=channel_labels,
-            channel_types=channel_types,
-            channel_units=channel_units,
             max_time=max_time,
             max_samples=max_samples,
             chunk_size=chunk_size,
@@ -292,7 +294,6 @@ class TestMarkerStream(BaseTestStream, MarkerStreamProcess):
         nominal_srate,
         *,
         source_id=None,
-        channel_labels=None,
         max_time=None,
         max_samples=None,
         chunk_size=None,
@@ -304,6 +305,11 @@ class TestMarkerStream(BaseTestStream, MarkerStreamProcess):
         **kwargs,
     ):
         # Set class attributes.
+        if name:
+            name = f"{name} test marker stream {stream_idx} {' '.join(g for g in functions)}"
+        else:
+            name = f"Test marker stream {stream_idx} {' '.join(g for g in functions)}"
+
         self.dtype = str
         self.delta = 1 / nominal_srate
 
@@ -314,7 +320,6 @@ class TestMarkerStream(BaseTestStream, MarkerStreamProcess):
             content_type=content_type,
             channel_count=channel_count,
             source_id=source_id,
-            channel_labels=channel_labels,
             max_time=max_time,
             max_samples=max_samples,
             chunk_size=chunk_size,
@@ -325,3 +330,16 @@ class TestMarkerStream(BaseTestStream, MarkerStreamProcess):
             debug=debug,
             **kwargs,
         )
+
+
+# Helper functions
+
+
+def make_channel_types(functions, channel_count):
+    if len(functions) == channel_count:
+        channel_types = functions
+    else:
+        extended = [functions[-1]] * (channel_count - len(functions))
+        channel_types = functions + extended
+    channel_types = [ch_type.strip("+") for ch_type in channel_types]
+    return channel_types
