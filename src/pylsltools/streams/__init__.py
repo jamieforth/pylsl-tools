@@ -9,7 +9,7 @@ from .base_stream import (
 )
 from .control_receiver import ControlReceiver
 
-if importlib.util.find_spec('aioconsole') is not None:
+if importlib.util.find_spec("aioconsole") is not None:
     from .control_sender import ControlSender
 else:
     # Handle the case where the module is not available

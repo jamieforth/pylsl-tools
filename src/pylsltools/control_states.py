@@ -2,6 +2,7 @@
 
 from enum import IntEnum, auto
 
+
 class ControlStates(IntEnum):
     STOP = auto()
     START = auto()
