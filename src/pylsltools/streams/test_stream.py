@@ -45,16 +45,6 @@ class BaseTestStream:
         channel_labels = make_channel_labels(functions, channel_count)
         channel_types = make_channel_types(functions, channel_count)
 
-        # If no source_id is provided default to script name and PID to
-        # identify the source. In the default case if a stream is interrupted
-        # due to network outage consumers should be able to automatically
-        # recover data up to max_buffered length (default 6 minutes). However,
-        # if the script is restarted the PID will be different and appear as a
-        # new LSL stream so automatic recovery will not work. To test LSL
-        # automatic recovery provide an explicit source_id.
-        if not source_id:
-            source_id = f"{os.path.basename(__file__)}:{os.getpid()}:{stream_idx}"
-
         super().__init__(
             name,
             channel_count=channel_count,
@@ -81,11 +71,21 @@ class BaseTestStream:
         self.debug = debug
 
     def run(self):
+        # If no source_id is provided default to script name and PID to
+        # identify the source. In the default case if a stream is interrupted
+        # due to network outage consumers should be able to automatically
+        # recover data up to max_buffered length (default 6 minutes). However,
+        # if the script is restarted the PID will be different and appear as a
+        # new LSL stream so automatic recovery will not work. To test LSL
+        # automatic recovery provide an explicit source_id.
+        if not self.source_id:
+            self.source_id = f"{os.path.basename(__file__)}:{os.getpid()}"
+
         info = self.make_stream_info()
         if self.debug:
             print(info.as_xml())
 
-        outlet = StreamOutlet(info, self.chunk_size, self.max_buffered)
+        self.outlet = StreamOutlet(info, self.chunk_size, self.max_buffered)
 
         # Synchronise sub-processes before entering main loop.
         if self.barrier is not None:
@@ -95,7 +95,7 @@ class BaseTestStream:
             while self.check_continue():
                 if self.start_time:
                     sample = self.generate_sample(self.elapsed_time, self.sample_count)
-                    outlet.push_sample(sample, timestamp=self.logical_time)
+                    self.outlet.push_sample(sample, timestamp=self.logical_time)
                     if self.debug and (
                         self.nominal_srate <= 5
                         or (self.sample_count % self.nominal_srate) == 0
@@ -109,24 +109,28 @@ class BaseTestStream:
                             sample,
                         )
                     self.sample_count = self.sample_count + 1
-                # Increment time for next iteration.
-                self.logical_time = self.logical_time + self.delta
-                self.elapsed_time = self.logical_time - self.start_time
-                # Avoid drift.
-                delay = self.logical_time - (local_clock() + self.latency)
-                if delay > 0:
-                    time.sleep(delay)
-                elif (delay + self.latency) < 0:
-                    print(
-                        f"LATE: {self.name} {delay + self.latency:.6f} try increasing latency!"
-                    )
+                    # Increment time for next iteration.
+                    self.logical_time = self.logical_time + self.delta
+                    self.elapsed_time = self.logical_time - self.start_time
+                    # Avoid drift.
+                    delay = self.logical_time - (local_clock() + self.latency)
+                    if delay > 0:
+                        time.sleep(delay)
+                    elif (delay + self.latency) < 0:
+                        print(
+                            f"LATE: {self.name} {delay + self.latency:.6f} try increasing latency!"
+                        )
         except KeyboardInterrupt:
             print(f"Stopping: {self.name}.")
         finally:
             # Call stop on exiting the main loop to ensure cleanup.
             self.stop()
-            self.cleanup()
             print(f"Ended: {self.name}.")
+
+    def cleanup(self):
+        print(f"Cleanup: {self.name}")
+        if self.outlet:
+            del self.outlet
 
     def initialise_time(self, start_time, latency):
         # Generate data slightly ahead of time to give all sub-processes time
@@ -144,16 +148,16 @@ class BaseTestStream:
         if self.stop_time is not None:
             if self.logical_time >= self.stop_time:
                 if self.debug:
-                    print("Synchronised stop time.")
+                    print(f"Synchronised stop time at {self.stop_time}")
                 self.start_time = None
                 self.stop_time = None
         if self.max_time is not None:
-            if self.elapsed_time >= self.max_time:
+            if self.elapsed_time > self.max_time:
                 if self.debug:
                     print(f"{self.name} max time reached.")
                 return False
         if self.max_samples is not None:
-            if self.sample_count >= self.max_samples:
+            if self.sample_count > self.max_samples:
                 if self.debug:
                     print(f"{self.name} max samples reached.")
                 return False
@@ -164,14 +168,14 @@ class BaseTestStream:
             pass
         else:
             if self.debug:
-                print(f"{self.name}: waiting for or handling a message")
+                print(f"{self.name}: waiting/handling for message from parent process")
             # This is blocking.
             message = self.recv_message_queue.get()
             if self.debug:
                 print(
                     f"{self.name} received message: {message}, local_clock: {local_clock()}"
                 )
-            # All time-stamps are in the local timebase.
+            # All time-stamps are in the local timebase (including latency).
             if message["state"] == self.control_states.PAUSE:
                 self.stop_time = message["time_stamp"]
             if message["state"] == self.control_states.START:
