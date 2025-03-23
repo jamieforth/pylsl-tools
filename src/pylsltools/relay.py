@@ -213,6 +213,10 @@ class Relay:
 
 def main():
     """Start an LSL relay stream."""
+
+    # Use multiprocessing spawn on all platforms.
+    mp.set_start_method("spawn")
+
     parser = argparse.ArgumentParser(
         description="""Create an LSL relay
     with optional remote control."""
