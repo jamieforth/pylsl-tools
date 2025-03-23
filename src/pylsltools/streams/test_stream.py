@@ -94,7 +94,6 @@ class BaseTestStream:
         try:
             while self.check_continue():
                 if self.start_time:
-                    self.elapsed_time = self.logical_time - self.start_time
                     sample = self.generate_sample(self.elapsed_time, self.sample_count)
                     outlet.push_sample(sample, timestamp=self.logical_time)
                     if self.debug and (
@@ -110,7 +109,9 @@ class BaseTestStream:
                             sample,
                         )
                     self.sample_count = self.sample_count + 1
+                # Increment time for next iteration.
                 self.logical_time = self.logical_time + self.delta
+                self.elapsed_time = self.logical_time - self.start_time
                 # Avoid drift.
                 delay = self.logical_time - (local_clock() + self.latency)
                 if delay > 0:
