@@ -310,7 +310,6 @@ class TestMarkerStream(BaseTestStream, MarkerStreamProcess):
         else:
             name = f"Test marker stream {stream_idx} {' '.join(g for g in functions)}"
 
-        self.dtype = str
         self.delta = 1 / nominal_srate
 
         super().__init__(

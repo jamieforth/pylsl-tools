@@ -6,7 +6,9 @@ import threading
 from multiprocessing import Process
 from threading import Thread
 
+import numpy as np
 from pylsl import IRREGULAR_RATE, StreamInfo
+from pylsl.lib import fmt2string
 
 
 class BaseStream:
@@ -34,6 +36,7 @@ class BaseStream:
         self.channel_count = channel_count
         self.nominal_srate = nominal_srate
         self.channel_format = channel_format
+        self.dtype = lslfmt2np(channel_format)
         self.source_id = source_id
         self.manufacturer = manufacturer
         self.channel_labels = check_channel_labels(channel_labels, channel_count)
@@ -324,3 +327,18 @@ def check_channel_units(channel_units, channel_count):
     if isinstance(channel_units, str):
         channel_units = [channel_units] * channel_count
     return channel_units
+
+
+def lslfmt2np(channel_format):
+    if isinstance(channel_format, int):
+        channel_format = fmt2string[channel_format]
+    lslfmt_map = {
+        "int8": np.int8,
+        "int16": np.int16,
+        "int32": np.int32,
+        "int64": np.int64,
+        "float32": np.float32,
+        "double64": np.float64,
+        "string": str,
+    }
+    return lslfmt_map[channel_format]
