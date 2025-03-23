@@ -134,10 +134,8 @@ class MonitorReceiver(MarkerStreamThread):
         finally:
             # Call stop on exiting the main loop to ensure cleanup.
             self.stop()
-            self.cleanup()
             print(f"Ended: {self.name}.")
 
     def cleanup(self):
         if self.inlet:
             self.inlet.close_stream()
-        time.sleep(0.2)

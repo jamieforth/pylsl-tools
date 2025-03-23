@@ -74,7 +74,6 @@ class ControlReceiver(MarkerStreamThread):
             print(f"{self.name}: {exc}")
         finally:
             self.stop()
-            self.cleanup()
             print(f"Ended: {self.name}.")
 
     def cleanup(self):

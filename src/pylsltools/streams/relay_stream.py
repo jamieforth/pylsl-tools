@@ -155,7 +155,6 @@ class RelayStream(DataStream):
         finally:
             # Call stop on exiting the main loop to ensure cleanup.
             self.stop()
-            self.cleanup()
             print(f"Ended: {self.name}.")
 
     def print(self, name, now, timestamp, content_type, data):
@@ -175,9 +174,3 @@ class RelayStream(DataStream):
         print("Relay cleanup")
         if self.inlet:
             self.inlet.close_stream()
-        # Pause thread before destroying outlet to try and avoid any receivers
-        # throwing a LostError before receiving the quit message. Not that it
-        # really matters as receivers will gracefully quit when a stream
-        # disconnects - but in general is there a better way to handle waiting
-        # for any pending messages to be sent before an outlet is destroyed?
-        time.sleep(0.2)
