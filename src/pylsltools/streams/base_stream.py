@@ -90,7 +90,7 @@ class BaseStreamThread(BaseStream, Thread):
 
     def stop(self):
         if not self.is_stopped():
-            print("Terminating thread...")
+            print(f"Terminating thread: {self.name}.")
             self.stop_event.set()
 
     def cleanup(self):
@@ -131,7 +131,7 @@ class BaseStreamProcess(BaseStream, Process):
 
     def stop(self):
         if not self.is_stopped():
-            print("Terminating process...")
+            print(f"Terminating process: {self.name}.")
             self.stop_event.set()
             if self.send_message_queue:
                 # Unblock any waiting threads.
