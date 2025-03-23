@@ -30,9 +30,9 @@ class Simulate:
         source_id,
         # Marker streams
         num_marker_streams,
-        num_marker_channels,
-        marker_sample_rate,
-        marker_fn,
+        marker_channel_count,
+        marker_nominal_srate,
+        marker_functions,
         marker_name,
         marker_content_type,
         marker_source_id,
@@ -48,6 +48,12 @@ class Simulate:
         self.stop_event = threading.Event()
 
         # Set class attributes.
+        # Override channel count if more generator functions are provided.
+        if channel_count < len(functions):
+            channel_count = len(functions)
+        if marker_channel_count < len(marker_functions):
+            marker_channel_count = len(marker_functions)
+
         # Data streams
         self.num_streams = num_streams
         self.functions = functions
@@ -60,11 +66,11 @@ class Simulate:
 
         # Marker streams
         self.num_marker_streams = num_marker_streams
-        self.marker_functions = marker_fn
+        self.marker_functions = marker_functions
         self.marker_name = marker_name
         self.marker_content_type = marker_content_type
-        self.marker_channel_count = num_marker_channels
-        self.marker_nominal_srate = marker_sample_rate
+        self.marker_channel_count = marker_channel_count
+        self.marker_nominal_srate = marker_nominal_srate
         self.marker_source_id = marker_source_id
 
         # Control stream
@@ -239,9 +245,9 @@ class Simulate:
 
 def main():
     """Generate synthetic LSL streams."""
-    import multiprocessing
 
-    multiprocessing.set_start_method("spawn")
+    # Use multiprocessing spawn on all platforms.
+    mp.set_start_method("spawn")
 
     parser = argparse.ArgumentParser(
         description="""Create test LSL data streams using synthetic data."""
@@ -290,9 +296,7 @@ def main():
     parser.add_argument(
         "--name", help="Additional identifier to append to stream name."
     )
-    parser.add_argument(
-        "--content-type", default="eeg", help="Stream content type."
-    )
+    parser.add_argument("--content-type", default="eeg", help="Stream content type.")
     parser.add_argument(
         "--channel-format",
         default="float32",
@@ -391,12 +395,6 @@ def main():
     )
     args = parser.parse_args()
 
-    # Override channel count if more generator functions are provided.
-    if args.num_channels < len(args.fn):
-        args.num_channels = len(args.fn)
-    if args.num_marker_channels < len(args.marker_fn):
-        args.num_marker_channels = len(args.marker_fn)
-
     simulate = Simulate(
         # Data streams
         args.num_streams,
@@ -409,11 +407,11 @@ def main():
         args.source_id,
         # Marker streams
         num_marker_streams=args.num_marker_streams,
-        marker_fn=args.marker_fn,
+        marker_functions=args.marker_fn,
         marker_name=args.marker_name,
         marker_content_type=args.marker_content_type,
-        num_marker_channels=args.num_marker_channels,
-        marker_sample_rate=args.marker_sample_rate,
+        marker_channel_count=args.num_marker_channels,
+        marker_nominal_srate=args.marker_sample_rate,
         marker_source_id=args.marker_source_id,
         # Control stream
         control_name=args.control_name,

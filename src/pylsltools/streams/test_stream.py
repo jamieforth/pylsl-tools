@@ -4,9 +4,11 @@ import math
 import os
 import textwrap
 import time
-import numpy as np
+from collections import Counter
 
+import numpy as np
 from pylsl import StreamOutlet, local_clock
+
 from pylsltools import ControlStates
 from pylsltools.streams import DataStream, MarkerStreamProcess
 
@@ -39,7 +41,8 @@ class BaseTestStream:
         debug=False,
         **kwargs,
     ):
-        # Initialise channel types based on generator functions.
+        # Initialise channel info based on generator functions.
+        channel_labels = make_channel_labels(functions, channel_count)
         channel_types = make_channel_types(functions, channel_count)
 
         # If no source_id is provided default to script name and PID to
@@ -55,6 +58,7 @@ class BaseTestStream:
         super().__init__(
             name,
             channel_count=channel_count,
+            channel_labels=channel_labels,
             channel_types=channel_types,
             source_id=source_id,
             **kwargs,
@@ -252,14 +256,7 @@ class TestDataStream(BaseTestStream, DataStream):
         **kwargs,
     ):
         # Set class attributes.
-        if name:
-            name = (
-                f"{name} test data stream {stream_idx} {' '.join(g for g in functions)}"
-            )
-        else:
-            name = f"Test data stream {stream_idx} {' '.join(g for g in functions)}"
-
-        self.dtype = channel_format
+        name = make_stream_name("Test data stream", stream_idx, prefix=name)
         self.delta = 1 / nominal_srate
 
         super().__init__(
@@ -305,10 +302,7 @@ class TestMarkerStream(BaseTestStream, MarkerStreamProcess):
         **kwargs,
     ):
         # Set class attributes.
-        if name:
-            name = f"{name} test marker stream {stream_idx} {' '.join(g for g in functions)}"
-        else:
-            name = f"Test marker stream {stream_idx} {' '.join(g for g in functions)}"
+        name = make_stream_name("Test marker stream", stream_idx, prefix=name)
 
         self.delta = 1 / nominal_srate
 
@@ -334,11 +328,50 @@ class TestMarkerStream(BaseTestStream, MarkerStreamProcess):
 # Helper functions
 
 
-def make_channel_types(functions, channel_count):
-    if len(functions) == channel_count:
-        channel_types = functions
-    else:
+def make_channel_labels(functions, channel_count):
+    if len(functions) < channel_count:
         extended = [functions[-1]] * (channel_count - len(functions))
-        channel_types = functions + extended
-    channel_types = [ch_type.strip("+") for ch_type in channel_types]
+        functions = functions + extended
+    channel_labels = []
+    counter = Counter()
+    for fn, i in zip(functions, range(len(functions))):
+        counter.update([fn])
+        if fn == "sine+":
+            channel_labels.append(f"sine {2**i}Hz")
+        else:
+            channel_labels.append(f"{fn} {counter[fn]}")
+    return channel_labels
+
+
+def make_channel_types(functions, channel_count):
+    if len(functions) < channel_count:
+        extended = [functions[-1]] * (channel_count - len(functions))
+        functions = functions + extended
+    channel_types = []
+    for fn in functions:
+        if fn == "stream-id":
+            channel_types.append("counter")
+        elif fn == "stream-seq":
+            channel_types.append("counter")
+        elif fn == "counter":
+            channel_types.append("counter")
+        elif fn == "counter+":
+            channel_types.append("counter")
+        elif fn == "counter-mod-fs":
+            channel_types.append("counter")
+        elif fn == "impulse":
+            channel_types.append("stim")
+        elif fn == "sine":
+            channel_types.append("misc")
+        elif fn == "sine+":
+            channel_types.append("misc")
+        else:
+            channel_types.append("misc")
     return channel_types
+
+
+def make_stream_name(name, stream_idx, prefix=None):
+    if prefix:
+        prefix = f"{prefix}: "
+    name = f"{prefix if prefix else ''}{name} {stream_idx}"
+    return name
