@@ -52,6 +52,7 @@ class ControlSender(MarkerStreamThread):
         """REPL interface for sending control messages."""
         while not self.is_stopped():
             state = await ainput("Enter a command: start, pause, stop.\n")
+            now = local_clock()
             if state == "start":
                 self.outlet.push_sample(
                     [
@@ -62,17 +63,17 @@ class ControlSender(MarkerStreamThread):
                             }
                         )
                     ],
-                    local_clock() + self.latency,
+                    now + self.latency,
                 )
             elif state == "pause":
                 self.outlet.push_sample(
                     [json.dumps({"state": self.control_states.PAUSE})],
-                    local_clock() + self.latency,
+                    now + self.latency,
                 )
             elif state == "stop":
                 self.outlet.push_sample(
                     [json.dumps({"state": self.control_states.STOP})],
-                    local_clock() + self.latency,
+                    now + self.latency,
                 )
                 self.stop()
             else:

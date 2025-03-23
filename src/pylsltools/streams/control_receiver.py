@@ -1,6 +1,6 @@
 import queue
 
-from pylsl import StreamInlet, proc_ALL, resolve_bypred
+from pylsl import StreamInlet, proc_clocksync, resolve_bypred
 from pylsl.util import LostError
 
 from pylsltools import ControlStates
@@ -43,15 +43,21 @@ class ControlReceiver(MarkerStreamThread):
             max_buflen=1,
             max_chunklen=1,
             recover=False,
-            processing_flags=proc_ALL,
+            processing_flags=proc_clocksync,
         )
+        # The first call to this function takes several milliseconds until a
+        # reliable first estimate is obtained.
+        self.inlet.time_correction()
         try:
             while not self.is_stopped():
                 # Blocking.
                 message, time_stamp = self.inlet.pull_sample(1)
                 if message:
                     print(
-                        f"Control {self.name}, time_stamp: {time_stamp}, message: {message}"
+                        f"Control {self.name},",
+                        f"time_stamp: {time_stamp},",
+                        f"message: {message},",
+                        f"offset: {self.inlet.time_correction()}",
                     )
                     # Handle message.
                     message = self.parse_message(message, time_stamp)
