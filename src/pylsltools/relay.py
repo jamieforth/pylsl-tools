@@ -92,6 +92,8 @@ class Relay:
             for stream in streams:
                 stream_key = self.make_stream_key(stream)
                 if stream_key not in self.active_streams.keys():
+                    if self.debug:
+                        print(stream.as_xml())
                     new_stream = RelayStream(
                         stream.name(),
                         stream.type(),
