@@ -85,7 +85,9 @@ class Simulate:
         self.recv_message_queue = mp.SimpleQueue()
         # Controller for receiving messages from a control stream.
 
-    def start(self, sync, latency, max_time, max_samples, chunk_size, max_buffered):
+    def start(
+        self, sync, max_time, max_samples, chunk_size, max_buffered, latency=None
+    ):
         """Start test streams with synchronised start time."""
         # Start remote control thread if initialised.
         if self.controller:
@@ -252,6 +254,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="""Create test LSL data streams using synthetic data."""
     )
+    control_args = parser.add_mutually_exclusive_group()
 
     # Data streams
     parser.add_argument(
@@ -271,7 +274,7 @@ def main():
     parser.add_argument(
         "-s",
         "--sample-rate",
-        default=500,
+        default=512,
         type=int,
         help="Synthetic data stream sample rate.",
     )
@@ -380,15 +383,21 @@ def main():
         help="""Maximum amount of data to buffer - in seconds if there is a
         nominal sampling rate, otherwise x100 in samples.""",
     )
-    parser.add_argument("--control-name", help="Control stream name.")
     parser.add_argument(
         "--sync",
         default=True,
         action=argparse.BooleanOptionalAction,
         help="Synchronise timestamps across all streams.",
     )
-    parser.add_argument(
-        "--latency", type=float, default=0.2, help="Scheduling latency in seconds."
+    control_args.add_argument(
+        "--control-name",
+        help="Control stream name. Control stream will set latency.",
+    )
+    control_args.add_argument(
+        "--latency",
+        type=float,
+        default=0.2,
+        help="Scheduling latency in seconds, if not using external controller.",
     )
     parser.add_argument(
         "--debug", action="store_true", help="Print extra debugging information."
@@ -420,7 +429,7 @@ def main():
     try:
         simulate.start(
             args.sync,
-            args.latency,
+            latency=args.latency,
             max_time=args.max_time,
             max_samples=args.max_samples,
             chunk_size=args.chunk_size,
