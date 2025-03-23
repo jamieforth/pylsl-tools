@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import multiprocessing as mp
 import threading
+import time
 
 from pylsl import local_clock
 
@@ -86,7 +87,14 @@ class Simulate:
         # Controller for receiving messages from a control stream.
 
     def start(
-        self, sync, max_time, max_samples, chunk_size, max_buffered, latency=None
+        self,
+        sync,
+        max_time,
+        max_samples,
+        chunk_size,
+        max_buffered,
+        latency=0.2,
+        start_delay=0,
     ):
         """Start test streams with synchronised start time."""
         # Start remote control thread if initialised.
@@ -151,6 +159,9 @@ class Simulate:
 
         # Initialise start time.
         if not self.controller:
+            if start_delay:
+                print(f"Start delay: {start_delay}")
+                time.sleep(start_delay)
             if sync:
                 # Get start time in the main thread to synchronise streams.
                 start_time = local_clock() + latency
@@ -254,7 +265,6 @@ def main():
     parser = argparse.ArgumentParser(
         description="""Create test LSL data streams using synthetic data."""
     )
-    control_args = parser.add_mutually_exclusive_group()
 
     # Data streams
     parser.add_argument(
@@ -389,20 +399,41 @@ def main():
         action=argparse.BooleanOptionalAction,
         help="Synchronise timestamps across all streams.",
     )
-    control_args.add_argument(
-        "--control-name",
-        help="Control stream name. Control stream will set latency.",
-    )
-    control_args.add_argument(
-        "--latency",
-        type=float,
-        default=0.2,
-        help="Scheduling latency in seconds, if not using external controller.",
-    )
     parser.add_argument(
         "--debug", action="store_true", help="Print extra debugging information."
     )
+
+    # Controller sub-commands
+    subparsers = parser.add_subparsers(title="Controllers", dest="controller")
+    external_control_parser = subparsers.add_parser("external")
+    external_control_parser.add_argument(
+        "control_name",
+        help="Control stream name. Control stream will set latency.",
+    )
+
+    internal_control_parser = subparsers.add_parser("internal")
+    internal_control_parser.add_argument(
+        "--latency",
+        type=float,
+        default=0.2,
+        help="Scheduling latency in seconds.",
+    )
+    internal_control_parser.add_argument(
+        "--start-delay",
+        type=float,
+        default=10,
+        help="Start time delay in seconds.",
+    )
     args = parser.parse_args()
+
+    if args.controller == "external":
+        control_name = args.control_name
+        latency = None
+        start_delay = None
+    if args.controller == "internal":
+        control_name = None
+        latency = args.latency
+        start_delay = args.start_delay
 
     simulate = Simulate(
         # Data streams
@@ -423,13 +454,14 @@ def main():
         marker_nominal_srate=args.marker_sample_rate,
         marker_source_id=args.marker_source_id,
         # Control stream
-        control_name=args.control_name,
+        control_name=control_name,
         debug=args.debug,
     )
     try:
         simulate.start(
             args.sync,
-            latency=args.latency,
+            latency=latency,
+            start_delay=start_delay,
             max_time=args.max_time,
             max_samples=args.max_samples,
             chunk_size=args.chunk_size,
