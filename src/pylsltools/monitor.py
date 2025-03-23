@@ -157,8 +157,7 @@ class Monitor:
 def main():
     """Monitor marker streams."""
     parser = argparse.ArgumentParser(
-        description="""Create an LSL
-    monitor."""
+        description="""Create an LSL monitor."""
     )
     parser.add_argument(
         "-p", "--pred", default="", help="Predicate string to resolve monitor streams."
