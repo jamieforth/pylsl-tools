@@ -404,7 +404,9 @@ def main():
     )
 
     # Controller sub-commands
-    subparsers = parser.add_subparsers(title="Controllers", dest="controller")
+    subparsers = parser.add_subparsers(
+        title="Controllers", dest="controller", required=True
+    )
     external_control_parser = subparsers.add_parser("external")
     external_control_parser.add_argument(
         "control_name",
