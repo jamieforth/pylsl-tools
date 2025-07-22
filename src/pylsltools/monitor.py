@@ -17,9 +17,8 @@ from pylsltools.utils import dev_to_name
 class Monitor:
     """Monitor matching streams."""
 
-    def __init__(self, pred, json=False, debug=False):
+    def __init__(self, pred, debug=False):
         self.pred = pred
-        self.json = json
         self.debug = debug
         self.stop_event = Event()
         self.active_streams = {}
@@ -61,7 +60,7 @@ class Monitor:
                         stream.hostname(),
                         stream.source_id(),
                         send_message_queue=self.recv_message_queue,
-                        json=self.json,
+                        json=True,
                         debug=self.debug,
                     )
                     self.active_streams[stream_key] = new_stream
@@ -99,7 +98,7 @@ class Monitor:
                     # Block here until message received.
                     message = self.recv_message_queue.get(timeout=0.1)
                     if message:
-                        self.stream_log[message["source_id"]] = message
+                        self.stream_log[message["source_id"]] = message['message']
                         if self.debug:
                             print(f"{__class__} received message: {message}")
                         else:
@@ -124,8 +123,7 @@ class Monitor:
                     textwrap.dedent(f"""\
             {state["name"]} \t
             sample count: {state["sample_count"]} \t
-            new samples: {state["sample_diff"]:04} \t
-            stream OK: {not state["stream_lost"]}
+            new samples: {state["sample_diff"]}
             """),
                     200,
                 )
@@ -162,7 +160,6 @@ def main():
     parser.add_argument(
         "-p", "--pred", default="", help="Predicate string to resolve monitor streams."
     )
-    parser.add_argument("--json", action="store_true", help="Receive JSON messages.")
     parser.add_argument(
         "--debug", action="store_true", help="Print extra debugging information."
     )
@@ -177,7 +174,7 @@ def main():
     else:
         pred = "starts-with(name, '_monitor_')"
 
-    monitor = Monitor(pred, json=args.json, debug=args.debug)
+    monitor = Monitor(pred, debug=args.debug)
 
     # Start continuous resolver and block unless keyboard interrupt.
     try:

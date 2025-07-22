@@ -5,7 +5,6 @@ For receiving monitoring information from relay streams.
 
 import json
 import os
-import time
 
 from pylsl import StreamInlet, StreamOutlet, resolve_bypred
 from pylsl.util import LostError
@@ -113,13 +112,11 @@ class MonitorReceiver(MarkerStreamThread):
                     # Handle message.
                     if self.json:
                         message = self.parse_message(message)
-                    else:
-                        message = {"message": message}
-                        # message['sample_diff'] = (message['sample_count']
-                        #                           - self.sample_count)
-                        # message['stream_lost'] = False
-                        # self.origin_name = message['name']
-                        # self.sample_count = message['sample_count']
+                    message["sample_diff"] = message["sample_count"] - self.sample_count
+                    self.sample_count = message["sample_count"]
+                    # Nest message under "message" key.
+                    message = {"message": message}
+                    # Add stream info.
                     message["name"] = self.sender_name
                     message["hostname"] = self.sender_hostname
                     message["source_id"] = self.source_id
