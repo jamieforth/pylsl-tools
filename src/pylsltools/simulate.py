@@ -423,7 +423,7 @@ def main():
     internal_control_parser.add_argument(
         "--start-delay",
         type=float,
-        default=10,
+        default=0,
         help="Start time delay in seconds.",
     )
     args = parser.parse_args()
