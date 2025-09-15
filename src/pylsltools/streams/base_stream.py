@@ -124,7 +124,7 @@ class BaseStreamProcess(BaseStream, Process):
     ):
         super().__init__(*args, **kwargs)
 
-        # Event to terminate the thread.
+        # Event to terminate the process.
         self.stop_event = multiprocessing.Event()
 
         # Set class attributes.
