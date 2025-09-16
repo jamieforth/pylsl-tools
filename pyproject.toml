@@ -29,6 +29,7 @@ xdf = [
 "Bug Tracker" = "https://github.com/jamieforth/pylsl-tools/issues"
 
 [project.scripts]
+lsl-notify = "pylsltools.resolve:main"
 lsl-control = "pylsltools.control:main"
 lsl-monitor = "pylsltools.monitor:main"
 lsl-playback = "pylsltools.playback:main"
