@@ -2,14 +2,24 @@
 
 import argparse
 import asyncio
+import logging
 import multiprocessing as mp
 import threading
 import time
 
 from pylsl import local_clock
 
-from pylsltools import ControlStates
-from pylsltools.streams import ControlReceiver, TestDataStream, TestMarkerStream
+from pylsltools import ControlStates, socket_options
+from pylsltools.logging import init_logging
+from pylsltools.streams import (
+    ControlReceiver,
+    LslOutletOptions,
+    StreamInfoData,
+    TestDataStream,
+    TestMarkerStream,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class Simulate:
@@ -23,23 +33,22 @@ class Simulate:
         # Data streams
         num_streams,
         functions,
-        name,
-        content_type,
-        channel_count,
-        nominal_srate,
-        channel_format,
-        source_id,
+        info,
         # Marker streams
         num_marker_streams,
-        marker_channel_count,
-        marker_nominal_srate,
         marker_functions,
-        marker_name,
-        marker_content_type,
-        marker_source_id,
-        # Control stream
-        control_name=None,
-        debug=False,
+        marker_info,
+        # Outlets
+        outlet_options,
+        # Control
+        sync,
+        start_delay,
+        latency,
+        max_time,
+        max_samples,
+        control_name,
+        # Logging
+        log_queue,
     ):
         """Initialise simulation test.
 
@@ -47,56 +56,49 @@ class Simulate:
         """
         # Event to terminate the main process.
         self.stop_event = threading.Event()
+        self._sentinel = None
 
         # Set class attributes.
         # Override channel count if more generator functions are provided.
-        if channel_count < len(functions):
-            channel_count = len(functions)
-        if marker_channel_count < len(marker_functions):
-            marker_channel_count = len(marker_functions)
+        if info.channel_count < len(functions):
+            info.channel_count = len(functions)
+        if marker_info.channel_count < len(marker_functions):
+            marker_info.channel_count = len(marker_functions)
 
         # Data streams
         self.num_streams = num_streams
         self.functions = functions
-        self.name = name
-        self.content_type = content_type
-        self.channel_count = channel_count
-        self.nominal_srate = nominal_srate
-        self.channel_format = channel_format
-        self.source_id = source_id
+        self.info = info
 
         # Marker streams
         self.num_marker_streams = num_marker_streams
         self.marker_functions = marker_functions
-        self.marker_name = marker_name
-        self.marker_content_type = marker_content_type
-        self.marker_channel_count = marker_channel_count
-        self.marker_nominal_srate = marker_nominal_srate
-        self.marker_source_id = marker_source_id
+        self.marker_info = marker_info
 
-        # Control stream
+        # Outlets
+        self.outlet_options = outlet_options
+
+        # Control
+        self.sync = sync
+        self.start_delay = start_delay
+        self.latency = latency
+        self.max_time = max_time
+        self.max_samples = max_samples
         if control_name:
-            self.controller = ControlReceiver(control_name, debug=debug)
-
-        self.debug = debug
+            self.controller = ControlReceiver(control_name)
 
         # Barrier for sub-process synchronisation.
         self.barrier = mp.Barrier(num_streams + num_marker_streams)
         # Queue for receiving messages from sub-processes.
-        self.recv_message_queue = mp.SimpleQueue()
+        self.recv_message_queue = mp.Queue()
         # Controller for receiving messages from a control stream.
 
-    def start(
-        self,
-        sync,
-        max_time,
-        max_samples,
-        chunk_size,
-        max_buffered,
-        latency=0.2,
-        start_delay=0,
-    ):
+        # Logging
+        self.log_queue=log_queue
+
+    def start(self):
         """Start test streams with synchronised start time."""
+
         # Start remote control thread if initialised.
         if self.controller:
             self.controller.start()
@@ -104,49 +106,38 @@ class Simulate:
         # Create sub-processes
         data_streams = [
             TestDataStream(
+                self.info,
+                self.outlet_options,
                 stream_idx,
                 self.functions,
-                self.name,
-                self.content_type,
-                self.channel_count,
-                self.nominal_srate,
-                channel_format=self.channel_format,
-                source_id=self.source_id,
-                max_time=max_time,
-                max_samples=max_samples,
-                chunk_size=chunk_size,
-                max_buffered=max_buffered,
+                self.barrier,
+                max_time=self.max_time,
+                max_samples=self.max_samples,
                 # Each sub-process has a unique recv_message queue.
-                recv_message_queue=mp.SimpleQueue(),
+                recv_message_queue=mp.Queue(),
                 # Each sub-process shares the same queue for sending message to
                 # the main process.
                 send_message_queue=self.recv_message_queue,
-                barrier=self.barrier,
-                debug=self.debug,
+                log_queue=self.log_queue,
+                log_level=logger.getEffectiveLevel()
             )
             for stream_idx in range(self.num_streams)
         ]
 
         marker_streams = [
             TestMarkerStream(
+                self.marker_info,
+                self.outlet_options,
                 stream_idx,
                 self.marker_functions,
-                self.marker_name,
-                self.marker_content_type,
-                self.marker_channel_count,
-                self.marker_nominal_srate,
-                source_id=self.marker_source_id,
-                max_time=max_time,
-                max_samples=max_samples,
-                chunk_size=chunk_size,
-                max_buffered=max_buffered,
+                self.barrier,
+                max_time=self.max_time,
+                max_samples=self.max_samples,
                 # Each sub-process has a unique recv_message queue.
-                recv_message_queue=mp.SimpleQueue(),
+                recv_message_queue=mp.Queue(),
                 # Each sub-process shares the same queue for sending message to
                 # the main process.
                 send_message_queue=self.recv_message_queue,
-                barrier=self.barrier,
-                debug=self.debug,
             )
             for stream_idx in range(self.num_marker_streams)
         ]
@@ -159,19 +150,19 @@ class Simulate:
 
         # Initialise start time.
         if not self.controller:
-            if start_delay:
-                print(f"Start delay: {start_delay}")
-                time.sleep(start_delay)
-            if sync:
+            if self.start_delay:
+                print(f"Start delay: {self.start_delay}")
+                time.sleep(self.start_delay)
+            if self.sync:
                 # Get start time in the main thread to synchronise streams.
-                start_time = local_clock() + latency
+                start_time = local_clock() + self.latency
             else:
                 start_time = None
             self.send_message_to_streams(
                 {
                     "state": self.control_states.START,
                     "time_stamp": start_time,
-                    "latency": latency,
+                    "latency": self.latency,
                 }
             )
 
@@ -208,11 +199,14 @@ class Simulate:
             while not self.streams_stopped() or (not self.recv_message_queue.empty()):
                 # Block here until message received.
                 message = await asyncio.to_thread(self.recv_message_queue.get)
-                if self.debug and message:
-                    print(f"{__class__} sub-process message: {message}")
+                if message is self._sentinel:
+                    logger.debug("Stream returned")
+                    # Notify resolver sentinel has been handled.
+                    self.resolver.task_done()
+                    break
+                logger.debug(f"Sub-process message: {message}")
         finally:
-            if self.debug:
-                print("End stream messaging.")
+            logger.debug("End stream messaging.")
             self.stop()
 
     async def recv_from_controller(self):
@@ -223,14 +217,17 @@ class Simulate:
             ):
                 # Loop here waiting for messages.
                 # Blocking.
+                # FIXME: Refactor like resolver.
                 message = await asyncio.to_thread(self.controller.get_message)
-                if self.debug and message:
-                    print(f"{self.__class__} controller message: {message}")
-                if message:
-                    self.send_message_to_streams(message)
+                if message is self._sentinel:
+                    logger.debug("Controller thread returned")
+                    # Notify resolver sentinel has been handled.
+                    self.resolver.task_done()
+                    break
+                logger.debug(f"Controller message: {message}")
+                self.send_message_to_streams(message)
         finally:
-            if self.debug:
-                print("End controller messaging.")
+            logger.debug("End controller messaging.")
             self.stop()
 
     def streams_stopped(self):
@@ -240,6 +237,7 @@ class Simulate:
         return True
 
     def stop(self):
+        print("STOP")
         if not self.is_stopped():
             self.stop_event.set()
         # Stop all stream processes.
@@ -263,7 +261,8 @@ def main():
     mp.set_start_method("spawn")
 
     parser = argparse.ArgumentParser(
-        description="""Create test LSL data streams using synthetic data."""
+        description="""Create test LSL data streams using synthetic data.""",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     # Data streams
@@ -273,20 +272,6 @@ def main():
         default=1,
         type=int,
         help="Number of streams to simulate.",
-    )
-    parser.add_argument(
-        "-c",
-        "--num-channels",
-        default=1,
-        type=int,
-        help="Number of channels per stream.",
-    )
-    parser.add_argument(
-        "-s",
-        "--sample-rate",
-        default=512,
-        type=int,
-        help="Synthetic data stream sample rate.",
     )
     parser.add_argument(
         "--fn",
@@ -306,19 +291,8 @@ def main():
         function names are provided the last function will be reused to match
         the number of channels.""",
     )
-    parser.add_argument(
-        "--name", help="Additional identifier to append to stream name."
-    )
-    parser.add_argument("--content-type", default="eeg", help="Stream content type.")
-    parser.add_argument(
-        "--channel-format",
-        default="float32",
-        choices=["float32", "double64", "string", "int64", "int32", "int16", "int8"],
-        help="Channel datatype.",
-    )
-    parser.add_argument(
-        "--source-id", default="", help="Unique identifier for stream source."
-    )
+
+    socket_options.add_stream_args(parser)
 
     # Marker streams
     parser.add_argument(
@@ -380,28 +354,16 @@ def main():
         help="""Maximum number of samples to generate by each test stream.""",
     )
     parser.add_argument(
-        "--chunk-size",
-        type=int,
-        default=0,
-        help="""Desired outlet chunk size in samples. Inlets can override
-        this.""",
-    )
-    parser.add_argument(
-        "--max-buffered",
-        type=int,
-        default=360,
-        help="""Maximum amount of data to buffer - in seconds if there is a
-        nominal sampling rate, otherwise x100 in samples.""",
-    )
-    parser.add_argument(
         "--sync",
         default=True,
         action=argparse.BooleanOptionalAction,
         help="Synchronise timestamps across all streams.",
     )
     parser.add_argument(
-        "--debug", action="store_true", help="Print extra debugging information."
+        "--verbose", action="store_true", help="Print extra debugging information."
     )
+
+    socket_options.add_socket_args(parser, inlet=True, outlet=True)
 
     # Controller sub-commands
     subparsers = parser.add_subparsers(
@@ -428,6 +390,14 @@ def main():
     )
     args = parser.parse_args()
 
+    # Logging
+    log_level = logging.INFO
+    if args.verbose:
+        log_level = logging.DEBUG
+
+    log_queue, log_listener = init_logging(log_level)
+    logger.debug("Logging initialised")
+
     if args.controller == "external":
         control_name = args.control_name
         latency = None
@@ -437,38 +407,51 @@ def main():
         latency = args.latency
         start_delay = args.start_delay
 
-    simulate = Simulate(
-        # Data streams
-        args.num_streams,
-        args.fn,
+    info = StreamInfoData(
         args.name,
         args.content_type,
         args.num_channels,
         args.sample_rate,
         args.channel_format,
         args.source_id,
+    )
+
+    marker_info = StreamInfoData(
+        args.marker_name,
+        args.marker_content_type,
+        args.num_marker_channels,
+        args.marker_sample_rate,
+        str,
+        args.marker_source_id,
+    )
+
+    outlet_options = LslOutletOptions(
+        args.outlet_max_buffer_size,
+        args.outlet_max_chunk_size,
+    )
+
+    simulate = Simulate(
+        # Data streams
+        args.num_streams,
+        args.fn,
+        info,
         # Marker streams
-        num_marker_streams=args.num_marker_streams,
-        marker_functions=args.marker_fn,
-        marker_name=args.marker_name,
-        marker_content_type=args.marker_content_type,
-        marker_channel_count=args.num_marker_channels,
-        marker_nominal_srate=args.marker_sample_rate,
-        marker_source_id=args.marker_source_id,
-        # Control stream
+        args.num_marker_streams,
+        args.marker_fn,
+        marker_info,
+        # Outlet
+        outlet_options,
+        # Control
+        sync=args.sync,
+        start_delay=start_delay,
+        latency=latency,
+        max_time=args.max_time,
+        max_samples=args.max_samples,
         control_name=control_name,
-        debug=args.debug,
+        log_queue=log_queue,
     )
     try:
-        simulate.start(
-            args.sync,
-            latency=latency,
-            start_delay=start_delay,
-            max_time=args.max_time,
-            max_samples=args.max_samples,
-            chunk_size=args.chunk_size,
-            max_buffered=args.max_buffered,
-        )
+        simulate.start()
     except Exception as exc:
         # Stop all streams if one raises an error.
         simulate.stop()

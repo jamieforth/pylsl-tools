@@ -1,4 +1,5 @@
-"""Generator stream class."""
+"""Generator stream."""
+
 import os
 import textwrap
 import time
@@ -70,7 +71,7 @@ class GeneratorStream(BaseStreamProcess):
         # Append custom metadata.
         if self.manufacturer:
             info.desc().append_child_value("manufacturer", self.manufacturer)
-        info.desc().append_child_value('latency', str(self.latency))
+        info.desc().append_child_value("latency", str(self.latency))
         if isinstance(self.desc, dict):
             for k, v in self.desc.items():
                 info.desc().append_child_value(k, v)
@@ -143,9 +144,7 @@ class GeneratorStream(BaseStreamProcess):
                 if delay > 0:
                     time.sleep(delay)
                 elif delay < 0:
-                    print(
-                        f"LATE: {self.name} {delay:.6f} try increasing latency!"
-                    )
+                    print(f"LATE: {self.name} {delay:.6f} try increasing latency!")
         except KeyboardInterrupt:
             print(f"Stopping: {self.name}.")
         finally:

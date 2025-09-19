@@ -1,9 +1,10 @@
-"""Base stream class."""
+"""Base stream classes."""
 
 import json
 import multiprocessing
 import threading
 import time
+from dataclasses import dataclass
 from multiprocessing import Process
 from threading import Thread
 
@@ -12,58 +13,121 @@ from pylsl import IRREGULAR_RATE, StreamInfo
 from pylsl.lib import fmt2string
 
 
+@dataclass
+class StreamInfoData:
+    """Stream info core properties."""
+
+    name: str
+    content_type: str
+    channel_count: int
+    nominal_srate: float
+    channel_format: int
+    source_id: str | None  # Empty string disables stream recovery.
+
+    def key(self):
+        key = self.source_id
+        if key == "":
+            key = self.uid
+        return key
+
+
+@dataclass
+class StreamInfoBoundData(StreamInfoData):
+    """Stream info core and hosting properties."""
+
+    version: str
+    created_at: str
+    uid: int
+    session_id: str
+    hostname: str
+
+
+@dataclass
+class LslOutletOptions():
+    max_buffer_size: int = 360
+    max_chunk_size: int = 0
+
+@dataclass
+class LslInletOptions(LslOutletOptions):
+    recover: bool = True
+    processing_flags: int = 0
+
+
 class BaseStream:
     """Base stream initialised with LSL properties."""
 
-    def __init__(
-        self,
-        name,
-        content_type,
-        channel_count,
-        nominal_srate,
-        channel_format,
-        *,
-        source_id="",
-        manufacturer="pylsltools",
-        channel_labels=None,
-        **kwargs,
-    ):
+    def __init__(self, info: StreamInfoData, **kwargs):
         # Complete initialisation of any Threads or Processes.
         super().__init__(**kwargs)
 
         # Set class attributes.
-        self.name = name
-        self.content_type = content_type
-        self.channel_count = channel_count
-        self.nominal_srate = nominal_srate
-        self.channel_format = channel_format
-        self.dtype = lslfmt2np(channel_format)
-        self.source_id = source_id
-        self.manufacturer = manufacturer
-        self.channel_labels = check_channel_labels(channel_labels, channel_count)
+        self.info = info
 
     def make_stream_info(self):
         """Return a pylsl StreamInfo object.
 
-        StreamInfo objects are not thread safe, so must be created
-        in the same thread as each stream.
+        StreamInfo objects are not thread safe, so must be created in the same
+        thread as each stream.
         """
-        info = StreamInfo(
-            self.name,
-            self.content_type,
-            self.channel_count,
-            self.nominal_srate,
-            self.channel_format,
-            self.source_id,
+        return StreamInfo(
+            self.info.name,
+            self.info.content_type,
+            self.info.channel_count,
+            self.info.nominal_srate,
+            self.info.channel_format,
+            self.info.source_id,
         )
-        # Append custom metadata.
-        if self.manufacturer:
-            info.desc().append_child_value("manufacturer", self.manufacturer)
-        if self.channel_labels:
-            channels = info.desc().append_child("channels")
-            for i in range(self.channel_count):
-                ch = channels.append_child("channel")
-                ch.append_child_value("label", self.channel_labels[i])
+
+    def dtype(self):
+        lslfmt2np(self.info.channel_format)
+
+
+class ChannelInfoMixin():
+    """Mixin to support channel metadata."""
+
+    def __init__(self, *args, channel_info: dict=None, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.set_channel_info(channel_info)
+
+    def set_channel_info(self, channel_info: dict):
+        self.channel_info = channel_info
+
+    def make_stream_info(self):
+        """Return a pylsl StreamInfo object.
+
+        StreamInfo objects are not thread safe, so must be created in the same
+        thread as each stream.
+        """
+        info = super().make_stream_info()
+        if isinstance(self.channel_info, dict):
+            for k, v in self.channel_info.items():
+                if isinstance(v, str):
+                    v = [v] * info.channel_count()
+                info._set_channel_info(v, k)
+        return info
+
+
+class DescInfoMixin():
+    """Mixin to support custom stream metadata."""
+
+    def __init__(self, *args, desc: dict=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.set_desc_info(desc)
+
+    def set_desc_info(self, desc: dict):
+        self.desc = desc
+
+    def make_stream_info(self):
+        """Return a pylsl StreamInfo object.
+
+        StreamInfo objects are not thread safe, so must be created in the same
+        thread as each stream.
+        """
+        info = super().make_stream_info()
+        if isinstance(self.desc, dict):
+            for k, v in self.desc.items():
+                info.desc().append_child_value(str(k), str(v))
         return info
 
 
@@ -120,6 +184,8 @@ class BaseStreamProcess(BaseStream, Process):
         *args,
         recv_message_queue=None,
         send_message_queue=None,
+        log_queue=None,
+        log_level=None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -130,6 +196,8 @@ class BaseStreamProcess(BaseStream, Process):
         # Set class attributes.
         self.recv_message_queue = recv_message_queue
         self.send_message_queue = send_message_queue
+        self.log_queue = log_queue
+        self.log_level = log_level
 
     def is_stopped(self):
         return self.stop_event.is_set()
@@ -156,55 +224,21 @@ class DataStream(BaseStreamProcess):
 
     def __init__(
         self,
-        name,
-        content_type,
-        channel_count,
-        nominal_srate,
-        channel_format,
-        *,
-        source_id="",
-        manufacturer="pylsltools",
-        channel_labels=None,
-        channel_types=None,
-        channel_units=None,
+        info: StreamInfoData,
         recv_message_queue=None,
         send_message_queue=None,
+        log_queue=None,
+        log_level=None,
         **kwargs,
     ):
-        # Create default labels.
-        if channel_labels is None:
-            channel_labels = make_channel_labels(channel_count)
-
         super().__init__(
-            name,
-            content_type,
-            channel_count,
-            nominal_srate,
-            channel_format,
-            source_id=source_id,
-            manufacturer=manufacturer,
-            channel_labels=channel_labels,
+            info,
             recv_message_queue=recv_message_queue,
             send_message_queue=send_message_queue,
+            log_queue=log_queue,
+            log_level=log_level,
             **kwargs,
         )
-
-        # Set class attributes.
-        self.channel_types = check_channel_types(channel_types, channel_count)
-        self.channel_units = check_channel_units(channel_units, channel_count)
-
-    def make_stream_info(self):
-        info = BaseStream.make_stream_info(self)
-        if self.channel_labels:
-            channels = info.desc().child("channels")
-            ch = channels.first_child()
-            for i in range(self.channel_count):
-                if self.channel_types:
-                    ch.append_child_value("type", self.channel_types[i])
-                if self.channel_units:
-                    ch.append_child_value("unit", self.channel_units[i])
-                ch = ch.next_sibling("channel")
-        return info
 
 
 class BaseMarkerStream(BaseStream):

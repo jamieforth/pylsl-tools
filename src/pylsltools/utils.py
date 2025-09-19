@@ -34,7 +34,7 @@ map_dev = {dev_map[d]: d for d in dev_map.keys()}
 
 
 def dev_to_name(hostname):
-    """ convert hostname to device letter """
+    """Convert hostname to device letter."""
     try:
         dev = map_dev[hostname]
     except KeyError:
@@ -43,5 +43,5 @@ def dev_to_name(hostname):
 
 
 def name_to_dev(name):
-    """ convert hostname to device letter """
+    """Convert hostname to device letter."""
     return dev_map[name]

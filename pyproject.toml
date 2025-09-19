@@ -29,14 +29,15 @@ xdf = [
 "Bug Tracker" = "https://github.com/jamieforth/pylsl-tools/issues"
 
 [project.scripts]
-lsl-notify = "pylsltools.resolve:main"
+lsl-ant-control = "pylsltools.ant_control:main"
 lsl-control = "pylsltools.control:main"
 lsl-monitor = "pylsltools.monitor:main"
+lsl-osc-control = "pylsltools.osc_control:main"
 lsl-playback = "pylsltools.playback:main"
 lsl-relay = "pylsltools.relay:main"
+lsl-resolve = "pylsltools.resolve:main"
+lsl-osc-relay = "pylsltools.osc_relay:main"
 lsl-simulate = "pylsltools.simulate:main"
-lsl-ant-control = "pylsltools.ant_control:main"
-lsl-osc-control = "pylsltools.osc_control:main"
 
 [dependency-groups]
 dev = [

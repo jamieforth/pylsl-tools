@@ -1,18 +1,23 @@
-"""Relay stream class.
+"""Relay stream.
 
-For re-encoding and/or pre-processing a stream with optional remote
+Can re-encoding and/or pre-processing a stream with optional remote
 control. Useful for re-encoding a local stream to fix broken client timestamps
 before relaying across the network.
 """
 
+import dataclasses
+import logging
 import os
 import textwrap
-import time
 
 from pylsl import StreamInlet, StreamOutlet, local_clock, resolve_bypred
 from pylsl.util import LostError
+
 from pylsltools import ControlStates
-from pylsltools.streams import DataStream, MonitorSender
+from pylsltools.logging import init_sub_process_logging
+from pylsltools.streams import DataStream, MonitorSender, StreamInfoBoundData
+
+logger = logging.getLogger(__name__)
 
 
 class RelayStream(DataStream):
@@ -22,52 +27,42 @@ class RelayStream(DataStream):
 
     def __init__(
         self,
-        name,
-        content_type,
-        channel_count,
-        nominal_srate,
-        channel_format,
-        source_id,
-        hostname,
+        info: StreamInfoBoundData,
+        inlet_options,
+        outlet_options,
         *,
         re_encode_timestamps=False,
         output=True,
         monitor=True,
         monitor_interval=5,
-        chunk_size=1,
-        max_buffered=360,
         recv_message_queue=None,
         send_message_queue=None,
-        debug=False,
+        log_queue=None,
+        log_level=None,
         **kwargs,
     ):
-        sender_name = name
-        name = "_relay_" + name
-        sender_source_id = source_id
-        source_id = f"_relay_{source_id}:{os.getpid()}"
+        # Store incoming stream info.
+        self.sender_info = info
 
+        # Update info for what will become the relay stream.
+        info = dataclasses.copy.copy(info)
+        info.name = "_relay_" + info.name
+        info.source_id = f"_relay_{info.source_id}:{os.getpid()}"
+        logger.debug(info)
         super().__init__(
-            name,
-            content_type,
-            channel_count,
-            nominal_srate,
-            channel_format,
-            source_id=source_id,
+            info,
             recv_message_queue=recv_message_queue,
             send_message_queue=send_message_queue,
+            log_queue=log_queue,
+            log_level=log_level,
         )
-
         # Initialise local attributes.
-        self.sender_name = sender_name
-        self.sender_hostname = hostname
-        self.sender_source_id = sender_source_id
+        self.inlet_options = inlet_options
+        self.outlet_options = outlet_options
         self.re_encode_timestamps = re_encode_timestamps
         self.output = output
         self.monitor = monitor
         self.monitor_interval = monitor_interval
-        self.chunk_size = chunk_size
-        self.max_buffered = max_buffered
-        self.debug = debug
         self.inlet = None
 
     def run(self):
@@ -76,15 +71,17 @@ class RelayStream(DataStream):
         # Chunk size should be 1 when re-encoding timestamps to ensure we get
         # samples as fast as possible.
 
+        init_sub_process_logging(self.log_queue, self.log_level)
+
         # We need to resolve the StreamInfo again because they don't appear to
         # be thread-safe.
         sender_info = None
         pred = " and ".join(
             [
-                f"name='{self.sender_name}'",
-                f"type='{self.content_type}'",
-                f"channel_count={self.channel_count}",
-                f"hostname='{self.sender_hostname}'",
+                f"name='{self.sender_info.name}'",
+                f"type='{self.sender_info.content_type}'",
+                f"channel_count={self.sender_info.channel_count}",
+                f"hostname='{self.sender_info.hostname}'",
             ]
         )
         while not sender_info and not self.is_stopped():
@@ -102,28 +99,35 @@ class RelayStream(DataStream):
         # the stream reconnects.
         self.inlet = StreamInlet(
             sender_info,
-            max_buflen=self.max_buffered,
-            max_chunklen=self.chunk_size,
-            recover=False,
-            processing_flags=0,
+            self.inlet_options.max_buffer_size,
+            self.inlet_options.max_chunk_size,
+            self.inlet_options.recover,
+            self.inlet_options.processing_flags,
         )
 
         if self.output:
             # FIXME: Append desc custom metadata.
             info = self.make_stream_info()
-            outlet = StreamOutlet(info, self.chunk_size, self.max_buffered)
+            outlet = StreamOutlet(
+                info,
+                max_buffered=self.outlet_options.max_buffer_size,
+                chunk_size=self.outlet_options.max_chunk_size,
+            )
 
         if self.monitor:
             self.monitor = MonitorSender(
-                "_monitor_" + self.sender_name, content_type="monitor", debug=self.debug
+                "_monitor_" + self.sender_info.name,
+                content_type="monitor",
             )
+
         sample_count = 0
+        timeout = max(1 / self.sender_info.nominal_srate * 1.5, 0.1)
 
         try:
             # TODO: Integrate control states!
             # Could use this to pre-process/reduce data being relayed.
             while not self.is_stopped():
-                sample, timestamp = self.inlet.pull_sample(0.2)
+                sample, timestamp = self.inlet.pull_sample(timeout)
                 now = local_clock()
                 # chunk, timestamps = self.inlet.pull_chunk(timeout)
                 if sample:
@@ -132,42 +136,51 @@ class RelayStream(DataStream):
                         timestamp = now
                     if self.output:
                         outlet.push_sample(sample, timestamp)
-                    if self.debug and (
-                        self.nominal_srate <= 5
-                        or (sample_count % self.nominal_srate) == 0
+                    if (
+                        self.info.nominal_srate <= 5
+                        or (sample_count % self.info.nominal_srate) == 0
                     ):
-                        self.print(self.name, now, timestamp, self.content_type, sample)
+                        logger.debug(
+                            self.fmt_log(
+                                self.info.name,
+                                now,
+                                timestamp,
+                                self.info.content_type,
+                                sample,
+                            )
+                        )
                     if self.monitor and (
-                        self.nominal_srate == 0
-                        or (sample_count % (self.nominal_srate * self.monitor_interval))
+                        self.info.nominal_srate == 0
+                        or (
+                            sample_count
+                            % (self.info.nominal_srate * self.monitor_interval)
+                        )
                         == 0
                     ):
                         self.monitor.send_JSON(
-                            hostname=self.sender_hostname,
-                            name=self.sender_name,
+                            hostname=self.sender_info.hostname,
+                            name=self.sender_info.name,
                             sample_count=sample_count,
                         )
-                    sample_count = sample_count + 1
+                    sample_count += 1
         except LostError as exc:
-            print(f"{self.name}: {exc}")
+            print(f"{self.info.name}: {exc}")
         except KeyboardInterrupt:
-            print(f"Stopping: {self.name}")
+            print(f"Stopping: {self.info.name}")
         finally:
             # Call stop on exiting the main loop to ensure cleanup.
             self.stop()
-            print(f"Ended: {self.name}.")
+            print(f"Ended: {self.info.name}.")
 
-    def print(self, name, now, timestamp, content_type, data):
-        print(
-            textwrap.fill(
-                textwrap.dedent(f"""\
+    def fmt_log(self, name, now, timestamp, content_type, data):
+        return textwrap.fill(
+            textwrap.dedent(f"""\
         {name}:
         now: {now:.6f},
         timestamp: {timestamp:.6f},
         {content_type}: {data}
         """),
-                200,
-            )
+            200,
         )
 
     def cleanup(self):

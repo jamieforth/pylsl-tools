@@ -1,6 +1,6 @@
 import argparse
 import multiprocessing as mp
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -9,6 +9,7 @@ from pdxdf import hdf5
 from pylsltools.streams import GeneratorStream
 
 
+# Probably broken in old hdf5 if remove this?
 @dataclass
 class StreamInfoAV:
     name: str

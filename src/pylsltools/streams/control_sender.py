@@ -16,20 +16,15 @@ class ControlSender(MarkerStreamThread):
 
     def __init__(
         self,
-        name,
+        info,
         latency=0.5,
-        *,
-        content_type="control",
-        source_id="",
-        manufacturer="pylsltools",
-        debug=False,
         **kwargs,
     ):
         # Use host name to identify source if unspecified. If stream is
         # interrupted due to network outage or the controller is
         # restarted receivers should be able to recover.
-        if not source_id:
-            source_id = platform.node()
+        # if not source_id:
+        #     source_id = platform.node()
 
         super().__init__(
             name, content_type, source_id=source_id, manufacturer=manufacturer, **kwargs
@@ -37,11 +32,11 @@ class ControlSender(MarkerStreamThread):
 
         # Set class attributes.
         self.latency = latency
-        self.debug = debug
 
     def run(self):
         info = self.make_stream_info()
 
+        # FIXME: Buffering?
         self.outlet = StreamOutlet(info, chunk_size=1)
 
         with asyncio.Runner() as runner:

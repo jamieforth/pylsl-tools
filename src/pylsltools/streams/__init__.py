@@ -5,9 +5,15 @@ from .base_stream import (
     BaseStream,
     BaseStreamProcess,
     BaseStreamThread,
+    ChannelInfoMixin,
     DataStream,
+    DescInfoMixin,
+    LslInletOptions,
+    LslOutletOptions,
     MarkerStreamProcess,
     MarkerStreamThread,
+    StreamInfoBoundData,
+    StreamInfoData,
 )
 from .control_receiver import ControlReceiver
 
@@ -19,5 +25,6 @@ else:
 
 from .generator_stream import GeneratorStream
 from .monitor_stream import MonitorReceiver, MonitorSender
+from .osc_relay_stream import OscRelayStream
 from .relay_stream import RelayStream
 from .test_stream import TestDataStream, TestMarkerStream

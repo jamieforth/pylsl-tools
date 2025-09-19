@@ -1,6 +1,8 @@
-"""Test stream class."""
+"""Test streams."""
 
+import logging
 import math
+import multiprocessing as mp
 import os
 import textwrap
 import time
@@ -10,10 +12,20 @@ import numpy as np
 from pylsl import StreamOutlet, local_clock
 
 from pylsltools import ControlStates
-from pylsltools.streams import DataStream, MarkerStreamProcess
+from pylsltools.logging import init_sub_process_logging
+from pylsltools.streams import (
+    ChannelInfoMixin,
+    DataStream,
+    DescInfoMixin,
+    LslOutletOptions,
+    MarkerStreamProcess,
+    StreamInfoData,
+)
+
+logger = logging.getLogger(__name__)
 
 
-class BaseTestStream:
+class BaseTestStream(ChannelInfoMixin): # FIXME: DescInfoMixin
     """Test stream to generate deterministic streams of data.
 
     Each stream runs in its own sub-process. Data is generated sample-by-sample
@@ -27,33 +39,25 @@ class BaseTestStream:
 
     def __init__(
         self,
-        stream_idx,
-        functions,
-        name,
-        channel_count,
-        *,
-        source_id=None,
-        max_time=None,
-        max_samples=None,
-        chunk_size=None,
-        max_buffered=None,
-        barrier=None,
-        debug=False,
+        info: type[StreamInfoData],
+        outlet_options: type[LslOutletOptions],
+        stream_idx: int,
+        functions: list[str],
+        barrier: type[mp.Barrier],
+        max_time: float | None = None,
+        max_samples: int | None = None,
         **kwargs,
     ):
         # Initialise channel info based on generator functions.
-        channel_labels = make_channel_labels(functions, channel_count)
-        channel_types = make_channel_types(functions, channel_count)
-
+        channel_info = {
+            "channel_labels": make_channel_labels(functions, info.channel_count),
+            "channel_types": make_channel_types(functions, info.channel_count),
+        }
         super().__init__(
-            name,
-            channel_count=channel_count,
-            channel_labels=channel_labels,
-            channel_types=channel_types,
-            source_id=source_id,
+            info,
+            channel_info=channel_info,
             **kwargs,
         )
-
         # Initialise values required by data generating functions.
         self.sample_count = 0
         self.elapsed_time = 0
@@ -65,12 +69,12 @@ class BaseTestStream:
         self.stop_time = None
         self.max_time = max_time
         self.max_samples = max_samples
-        self.chunk_size = chunk_size
-        self.max_buffered = max_buffered
+        self.outlet_options = outlet_options
         self.barrier = barrier
-        self.debug = debug
 
     def run(self):
+        init_sub_process_logging(self.log_queue, self.log_level)
+
         # If no source_id is provided default to script name and PID to
         # identify the source. In the default case if a stream is interrupted
         # due to network outage consumers should be able to automatically
@@ -78,14 +82,17 @@ class BaseTestStream:
         # if the script is restarted the PID will be different and appear as a
         # new LSL stream so automatic recovery will not work. To test LSL
         # automatic recovery provide an explicit source_id.
-        if not self.source_id:
-            self.source_id = f"{os.path.basename(__file__)}:{os.getpid()}"
+        if self.info.source_id is None:
+            self.info.source_id = f"{os.path.basename(__file__)}:{os.getpid()}"
 
         info = self.make_stream_info()
-        if self.debug:
-            print(info.as_xml())
+        logger.debug(info.as_xml())
 
-        self.outlet = StreamOutlet(info, self.chunk_size, self.max_buffered)
+        self.outlet = StreamOutlet(
+            info,
+            max_buffered=self.outlet_options.max_buffer_size,
+            chunk_size=self.outlet_options.max_chunk_size,
+        )
 
         # Synchronise sub-processes before entering main loop.
         if self.barrier is not None:
@@ -96,19 +103,21 @@ class BaseTestStream:
                 if self.start_time:
                     sample = self.generate_sample(self.elapsed_time, self.sample_count)
                     self.outlet.push_sample(sample, timestamp=self.logical_time)
-                    if self.debug and (
-                        self.nominal_srate <= 5
-                        or (self.sample_count % self.nominal_srate) == 0
+                    if (
+                            self.info.nominal_srate <= 5
+                        or (self.sample_count % self.info.nominal_srate) == 0
                     ):
-                        self.print(
-                            self.name,
-                            local_clock(),
-                            self.logical_time,
-                            self.elapsed_time,
-                            self.content_type,
-                            sample,
+                        logger.debug(
+                            [#self.fmt_log(
+                                self.info.name,
+                                local_clock(),
+                                self.logical_time,
+                                self.elapsed_time,
+                                self.info.content_type,
+                                sample,
+                            ]
                         )
-                    self.sample_count = self.sample_count + 1
+                    self.sample_count += 1
                     # Increment time for next iteration.
                     self.logical_time = self.logical_time + self.delta
                     self.elapsed_time = self.logical_time - self.start_time
@@ -117,7 +126,7 @@ class BaseTestStream:
                     if delay > 0:
                         time.sleep(delay)
                     elif (delay + self.latency) < 0:
-                        print(
+                        logger.warn(
                             f"LATE: {self.name} {delay + self.latency:.6f} try increasing latency!"
                         )
         except KeyboardInterrupt:
@@ -126,6 +135,17 @@ class BaseTestStream:
             # Call stop on exiting the main loop to ensure cleanup.
             self.stop()
             print(f"Ended: {self.name}.")
+
+    # def fmt_log(self, name, now, timestamp, content_type, data):
+    #     return textwrap.fill(
+    #         textwrap.dedent(f"""\
+    #     {name}:
+    #     now: {now:.6f},
+    #     timestamp: {timestamp:.6f},
+    #     {content_type}: {data}
+    #     """),
+    #         200,
+    #     )
 
     def cleanup(self):
         print(f"Cleanup: {self.name}")
@@ -147,19 +167,18 @@ class BaseTestStream:
             return False
         if self.stop_time is not None:
             if self.logical_time >= self.stop_time:
-                if self.debug:
-                    print(f"Synchronised stop time at {self.stop_time}")
+                logger.debug(f"Synchronised stop time at {self.stop_time}")
                 self.start_time = None
                 self.stop_time = None
         if self.max_time is not None:
             if self.elapsed_time > self.max_time:
-                if self.debug:
-                    print(f"{self.name} max time reached.")
-                return False
+                logger.debug(f"{self.name} max time reached.")
+                # return False
+                self.start_time = None
+                self.stop_time = None
         if self.max_samples is not None:
             if self.sample_count > self.max_samples:
-                if self.debug:
-                    print(f"{self.name} max samples reached.")
+                logger.debug(f"{self.name} max samples reached.")
                 return False
         return True
 
@@ -167,14 +186,14 @@ class BaseTestStream:
         if self.start_time and self.recv_message_queue.empty():
             pass
         else:
-            if self.debug:
-                print(f"{self.name}: waiting/handling for message from parent process")
+            logger.debug(
+                f"{self.name}: waiting/handling for message from parent process"
+            )
             # This is blocking.
             message = self.recv_message_queue.get()
-            if self.debug:
-                print(
-                    f"{self.name} received message: {message}, local_clock: {local_clock()}"
-                )
+            logger.debug(
+                f"{self.name} received message: {message}, local_clock: {local_clock()}"
+            )
             # All time-stamps are in the local timebase (including latency).
             if message["state"] == self.control_states.PAUSE:
                 self.stop_time = message["time_stamp"]
@@ -194,9 +213,9 @@ class BaseTestStream:
     def generate_sample(self, time, sample_idx):
         sample = [
             self.generate_channel_data(time, sample_idx, channel_idx)
-            for channel_idx in range(self.channel_count)
+            for channel_idx in range(self.info.channel_count)
         ]
-        sample = np.array(sample, dtype=self.dtype)
+        sample = np.array(sample, dtype=self.dtype())
         return sample
 
     def generate_channel_data(self, time, sample_idx, channel_idx):
@@ -208,7 +227,7 @@ class BaseTestStream:
         if fn == "counter":
             return sample_idx
         if fn == "counter+":
-            return (sample_idx * self.channel_count) + channel_idx
+            return (sample_idx * self.info.channel_count) + channel_idx
         if fn == "counter-mod-fs":
             return sample_idx % self.nominal_srate
         if fn == "impulse":
@@ -239,95 +258,23 @@ class BaseTestStream:
 
 
 class TestDataStream(BaseTestStream, DataStream):
-    def __init__(
-        self,
-        stream_idx,
-        functions,
-        name,
-        content_type,
-        channel_count,
-        nominal_srate,
-        *,
-        channel_format,
-        source_id=None,
-        max_time=None,
-        max_samples=None,
-        chunk_size=None,
-        max_buffered=None,
-        recv_message_queue=None,
-        send_message_queue=None,
-        barrier=None,
-        debug=False,
-        **kwargs,
-    ):
+    def __init__(self, info, outlet_options, stream_idx, *args, **kwargs):
         # Set class attributes.
-        name = make_stream_name("Test data stream", stream_idx, prefix=name)
-        self.delta = 1 / nominal_srate
+        info.name = make_stream_name("Test data stream", stream_idx, prefix=info.name)
 
-        super().__init__(
-            stream_idx,
-            functions,
-            name,
-            content_type=content_type,
-            channel_count=channel_count,
-            nominal_srate=nominal_srate,
-            channel_format=channel_format,
-            source_id=source_id,
-            max_time=max_time,
-            max_samples=max_samples,
-            chunk_size=chunk_size,
-            max_buffered=max_buffered,
-            recv_message_queue=recv_message_queue,
-            send_message_queue=send_message_queue,
-            barrier=barrier,
-            debug=debug,
-            **kwargs,
-        )
+        self.delta = 1 / info.nominal_srate
+
+        super().__init__(info, outlet_options, stream_idx, *args, **kwargs)
 
 
 class TestMarkerStream(BaseTestStream, MarkerStreamProcess):
-    def __init__(
-        self,
-        stream_idx,
-        functions,
-        name,
-        content_type,
-        channel_count,
-        nominal_srate,
-        *,
-        source_id=None,
-        max_time=None,
-        max_samples=None,
-        chunk_size=None,
-        max_buffered=None,
-        recv_message_queue=None,
-        send_message_queue=None,
-        barrier=None,
-        debug=False,
-        **kwargs,
-    ):
+    def __init__(self, info, outlet_options, stream_idx, *args, **kwargs):
         # Set class attributes.
-        name = make_stream_name("Test marker stream", stream_idx, prefix=name)
+        info.name = make_stream_name("Test marker stream", stream_idx, prefix=info.name)
 
-        self.delta = 1 / nominal_srate
+        self.delta = 1 / info.nominal_srate
 
-        super().__init__(
-            stream_idx,
-            functions,
-            name,
-            content_type=content_type,
-            channel_count=channel_count,
-            source_id=source_id,
-            max_time=max_time,
-            max_samples=max_samples,
-            chunk_size=chunk_size,
-            max_buffered=max_buffered,
-            recv_message_queue=recv_message_queue,
-            send_message_queue=send_message_queue,
-            barrier=barrier,
-            debug=debug,
-            **kwargs,
-        )
+        super().__init__(info, outlet_options, stream_idx, *args, **kwargs)
 
 
 # Helper functions

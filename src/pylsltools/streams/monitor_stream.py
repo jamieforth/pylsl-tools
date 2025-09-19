@@ -1,4 +1,4 @@
-"""Monitor stream class.
+"""Monitor stream.
 
 For receiving monitoring information from relay streams.
 """

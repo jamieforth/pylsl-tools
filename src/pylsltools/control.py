@@ -1,6 +1,8 @@
 """Script to send timestamped control messages over LSL."""
 
 import argparse
+
+from pylsltools import socket_options
 from pylsltools.streams import ControlSender
 
 
@@ -8,20 +10,20 @@ def main():
     """Control stream."""
     parser = argparse.ArgumentParser(
         description="""Create a controller stream for sending timestamped
-    messages to other pylsltools streams."""
+        messages to other pylsltools streams.""",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--name", required=True, help="Name of the control stream.")
-    parser.add_argument(
-        "--content-type", default="control", help="Content type for marker stream."
-    )
-    parser.add_argument(
-        "--source-id", default="", help="Unique identifier for stream source."
+    socket_options.add_marker_stream_args(
+        parser,
+        name_required=True,
+        default_content_type="control",
+        default_num_channels=1,
     )
     parser.add_argument(
         "--latency", type=float, default=0.5, help="Scheduling latency in seconds."
     )
     parser.add_argument(
-        "--debug", action="store_true", help="Print extra debugging information."
+        "--verbose", action="store_true", help="Print extra debugging information."
     )
 
     args = parser.parse_args()
@@ -30,7 +32,6 @@ def main():
         content_type=args.content_type,
         source_id=args.source_id,
         latency=args.latency,
-        debug=args.debug,
     )
     try:
         controller.start()
